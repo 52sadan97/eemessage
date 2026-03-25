@@ -113,25 +113,22 @@ body {
   flex-shrink: 0;
 }
 
-/* Sidebar header profile pic — bigger + logo-friendly */
+/* Sidebar header profile pic */
 .sidebar-header .avatar {
-  width: 52px !important;
-  height: 52px !important;
-  min-width: 52px;
-  min-height: 52px;
-  border-radius: 30% !important;
-  object-fit: contain !important;
-  background-color: #fff !important;
+  width: 48px !important;
+  height: 48px !important;
+  min-width: 48px;
+  min-height: 48px;
+  border-radius: 50% !important;
+  object-fit: cover !important;
   border: 2px solid var(--primary-color);
-  padding: 3px;
 }
 
 @media (max-width: 768px) {
   .sidebar-header .avatar {
-    width: 56px !important;
-    height: 56px !important;
-    min-width: 56px;
-    min-height: 56px;
-    padding: 4px;
+    width: 50px !important;
+    height: 50px !important;
+    min-width: 50px;
+    min-height: 50px;
   }
 }
