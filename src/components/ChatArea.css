@@ -715,6 +715,95 @@
   gap: 4px;
 }
 
+/* ===== WhatsApp-style Recording Bar ===== */
+.recording-bar {
+  flex: 1;
+  display: flex;
+  align-items: center;
+  gap: 12px;
+  padding: 0 4px;
+  animation: fadeIn 0.2s ease-out;
+}
+
+.rec-cancel {
+  background: none;
+  border: none;
+  color: var(--danger);
+  cursor: pointer;
+  padding: 6px;
+  border-radius: 50%;
+  display: flex;
+  transition: background 0.2s;
+}
+.rec-cancel:hover { background: rgba(235,87,87,0.15); }
+
+.rec-pulse {
+  width: 12px;
+  height: 12px;
+  background: #ef4444;
+  border-radius: 50%;
+  animation: pulse 1s ease-in-out infinite;
+  flex-shrink: 0;
+}
+
+.rec-timer {
+  font-family: 'Courier New', monospace;
+  font-size: 16px;
+  font-weight: 600;
+  color: var(--text-primary);
+  min-width: 48px;
+}
+
+.rec-wave {
+  flex: 1;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  gap: 3px;
+  height: 28px;
+}
+
+.rec-wave span {
+  display: inline-block;
+  width: 3px;
+  background: var(--primary-color);
+  border-radius: 3px;
+  animation: wave 0.8s ease-in-out infinite;
+}
+.rec-wave span:nth-child(1) { animation-delay: 0s; height: 8px; }
+.rec-wave span:nth-child(2) { animation-delay: 0.15s; height: 18px; }
+.rec-wave span:nth-child(3) { animation-delay: 0.3s; height: 26px; }
+.rec-wave span:nth-child(4) { animation-delay: 0.15s; height: 18px; }
+.rec-wave span:nth-child(5) { animation-delay: 0s; height: 8px; }
+
+.rec-send {
+  background: var(--primary-color);
+  border: none;
+  color: #fff;
+  width: 40px;
+  height: 40px;
+  border-radius: 50%;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  cursor: pointer;
+  flex-shrink: 0;
+  transition: transform 0.2s, background 0.2s;
+  box-shadow: 0 2px 8px rgba(0,168,132,0.3);
+}
+.rec-send:hover { transform: scale(1.1); }
+.rec-send:active { transform: scale(0.95); }
+
+@keyframes pulse {
+  0%, 100% { opacity: 1; transform: scale(1); }
+  50% { opacity: 0.4; transform: scale(0.8); }
+}
+
+@keyframes wave {
+  0%, 100% { transform: scaleY(0.4); }
+  50% { transform: scaleY(1); }
+}
+
 /* Video Recording Overlay */
 .video-recording-overlay {
   position: fixed;

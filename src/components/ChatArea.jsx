@@ -11,6 +11,7 @@ const ChatArea = ({ contact, messages, currentUser, onSendMessage, onDeleteMessa
   const [isRecording, setIsRecording] = useState(false);
   const [showEmojiPicker, setShowEmojiPicker] = useState(false);
   const [avatarPreview, setAvatarPreview] = useState(null);
+  const [recordingTimer, setRecordingTimer] = useState(0);
   const endOfMessagesRef = useRef(null);
   const fileInputRef = useRef(null);
   const mediaRecorderRef = useRef(null);
@@ -19,6 +20,7 @@ const ChatArea = ({ contact, messages, currentUser, onSendMessage, onDeleteMessa
   const videoRecorderRef = useRef(null);
   const videoChunksRef = useRef([]);
   const videoPreviewRef = useRef(null);
+  const recordingTimerRef = useRef(null);
   const [isVideoRecording, setIsVideoRecording] = useState(false);
 
   useEffect(() => {
@@ -74,6 +76,8 @@ const ChatArea = ({ contact, messages, currentUser, onSendMessage, onDeleteMessa
 
       mediaRecorder.start();
       setIsRecording(true);
+      setRecordingTimer(0);
+      recordingTimerRef.current = setInterval(() => setRecordingTimer(p => p + 1), 1000);
     } catch(err) {
       alert("Mikrofon izni alınamadı!");
     }
@@ -84,6 +88,8 @@ const ChatArea = ({ contact, messages, currentUser, onSendMessage, onDeleteMessa
       mediaRecorderRef.current.stop();
       mediaRecorderRef.current.stream.getTracks().forEach(t => t.stop());
       setIsRecording(false);
+      setRecordingTimer(0);
+      if (recordingTimerRef.current) { clearInterval(recordingTimerRef.current); recordingTimerRef.current = null; }
     }
   };
 
@@ -324,26 +330,30 @@ const ChatArea = ({ contact, messages, currentUser, onSendMessage, onDeleteMessa
         </button>
         
         {isRecording ? (
-          <div className="recording-status" style={{flex: 1, display: 'flex', alignItems: 'center', color: 'var(--danger)'}}>
-            <span className="blink-dot" style={{width: 10, height: 10, borderRadius: '50%', background: 'red', marginRight: 10, animation: 'blink 1s infinite'}}></span>
-            Ses Kaydediliyor...
+          <div className="recording-bar">
+            <button type="button" className="rec-cancel" onClick={() => { mediaRecorderRef.current?.stream.getTracks().forEach(t => t.stop()); setIsRecording(false); setRecordingTimer(0); if (recordingTimerRef.current) clearInterval(recordingTimerRef.current); }} title="İptal">
+              <X size={20} />
+            </button>
+            <div className="rec-pulse"></div>
+            <span className="rec-timer">{Math.floor(recordingTimer / 60).toString().padStart(2, '0')}:{(recordingTimer % 60).toString().padStart(2, '0')}</span>
+            <div className="rec-wave">
+              <span></span><span></span><span></span><span></span><span></span>
+            </div>
+            <button type="button" className="rec-send" onClick={stopRecording} title="Gönder">
+              <Send size={20} />
+            </button>
           </div>
         ) : (
-          <input type="text" placeholder="Bir mesaj yazın" value={inputText} onChange={(e) => setInputText(e.target.value)} />
-        )}
-        
-        {inputText.trim() ? (
-          <button type="submit" className="icon-btn send-btn"><Send size={24} /></button>
-        ) : (
-          isRecording ? (
-            <button type="button" className="icon-btn mic-btn" onClick={stopRecording} style={{color: 'var(--danger)'}}>
-              <Square size={24} />
-            </button>
-          ) : (
-            <button type="button" className="icon-btn mic-btn" onClick={startRecording} title="Ses Kaydet">
-              <Mic size={24} />
-            </button>
-          )
+          <>
+            <input type="text" placeholder="Bir mesaj yazın" value={inputText} onChange={(e) => setInputText(e.target.value)} />
+            {inputText.trim() ? (
+              <button type="submit" className="icon-btn send-btn"><Send size={24} /></button>
+            ) : (
+              <button type="button" className="icon-btn mic-btn" onClick={startRecording} title="Ses Kaydet">
+                <Mic size={24} />
+              </button>
+            )}
+          </>
         )}
       </form>
 

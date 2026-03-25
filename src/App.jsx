@@ -98,8 +98,22 @@ function App() {
               markChatAsRead(msg.senderId.toString());
            } else {
               toast.info(`Yeni mesaj: ${msg.text || '📸 Medya'}`, { icon: '💬' });
-              if ("Notification" in window && Notification.permission === 'granted') {
-                 new Notification("EEMessage", { body: `Yeni mesaj: ${msg.text || '📸 Medya'}`, icon: "/pwa-192x192.svg", tag: msg.id, vibrate: [200, 100, 200] });
+              // Service Worker notification — shows in mobile notification bar
+              if ('serviceWorker' in navigator && Notification.permission === 'granted') {
+                const sender = contacts.find(c => c.id.toString() === msg.senderId.toString());
+                const senderName = sender?.name || 'Bilinmeyen';
+                navigator.serviceWorker.ready.then(reg => {
+                  reg.showNotification('EEMessage', {
+                    body: `${senderName}: ${msg.text || '📸 Medya'}`,
+                    icon: '/app-icon.jpg',
+                    badge: '/app-icon.jpg',
+                    tag: `msg-${msg.senderId}`,
+                    renotify: true,
+                    vibrate: [200, 100, 200, 100, 200],
+                    data: { senderId: msg.senderId },
+                    actions: [{ action: 'open', title: 'Aç' }]
+                  });
+                });
               }
               // Mark as delivered
               socket.emit('update_message_status', { messageId: msg.id, status: 'delivered', senderId: msg.senderId });
