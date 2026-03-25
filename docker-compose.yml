@@ -10,10 +10,9 @@ services:
     ports:
       - "3010:3010"
     environment:
-      # Siteniz yayına alınca kendi ip adresinizle ya da https://eemessage.hepsikalite.com adresiyle değiştirebilirsiniz
       - BACKEND_URL=http://localhost:3010
     volumes:
-      - eemessage_db:/app/server/database.sqlite
+      - eemessage_data:/app/server/data
       - eemessage_uploads:/app/server/uploads
     networks:
       - eemessage_net
@@ -32,7 +31,7 @@ services:
       - eemessage_net
 
 volumes:
-  eemessage_db:
+  eemessage_data:
   eemessage_uploads:
 
 networks:

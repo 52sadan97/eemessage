@@ -18,7 +18,9 @@ const JWT_SECRET = 'eemessage_super_secret_key_123';
 const UPLOADS_DIR = path.join(__dirname, 'uploads');
 const AVATARS_DIR = path.join(UPLOADS_DIR, 'avatars');
 const MEDIA_DIR = path.join(UPLOADS_DIR, 'media');
+const DATA_DIR = path.join(__dirname, 'data');
 
+if (!fs.existsSync(DATA_DIR)) fs.mkdirSync(DATA_DIR, { recursive: true });
 if (!fs.existsSync(UPLOADS_DIR)) fs.mkdirSync(UPLOADS_DIR);
 if (!fs.existsSync(AVATARS_DIR)) fs.mkdirSync(AVATARS_DIR);
 if (!fs.existsSync(MEDIA_DIR)) fs.mkdirSync(MEDIA_DIR);
@@ -33,7 +35,7 @@ const io = new Server(server, {
   }
 });
 
-const db = new Database('database.sqlite');
+const db = new Database(path.join(DATA_DIR, 'database.sqlite'));
 
 try {
   db.exec(`
