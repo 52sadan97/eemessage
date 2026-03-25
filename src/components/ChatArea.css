@@ -409,228 +409,268 @@
 }
 
 /* Incoming Call Modal */
-.incoming-call-overlay {
+/* ===== WhatsApp Call Screens ===== */
+.wa-call-screen {
   position: fixed;
   inset: 0;
   z-index: 99999;
-  background: rgba(0,0,0,0.7);
-  backdrop-filter: blur(8px);
   display: flex;
+  flex-direction: column;
+}
+
+.wa-call-bg {
+  position: absolute;
+  inset: 0;
+  background: linear-gradient(180deg, #1a3a2a 0%, #0d1f17 40%, #0a1a12 100%);
+  z-index: 0;
+}
+
+.wa-call-content {
+  position: relative;
+  z-index: 1;
+  flex: 1;
+  display: flex;
+  flex-direction: column;
   align-items: center;
-  justify-content: center;
-  animation: fadeIn 0.3s ease;
+  justify-content: space-between;
+  padding: 60px 20px 40px;
+  padding-top: max(60px, env(safe-area-inset-top, 60px));
+  padding-bottom: max(40px, env(safe-area-inset-bottom, 40px));
 }
 
-.incoming-call-card {
-  background: var(--bg-panel);
-  border-radius: 24px;
-  padding: 40px 32px;
+.wa-call-top {
   text-align: center;
-  min-width: 300px;
-  box-shadow: 0 20px 60px rgba(0,0,0,0.4);
-  animation: scaleIn 0.3s ease;
 }
 
-@keyframes scaleIn {
-  from { transform: scale(0.8); opacity: 0; }
-  to { transform: scale(1); opacity: 1; }
+.wa-call-label {
+  color: rgba(255,255,255,0.6);
+  font-size: 14px;
+  letter-spacing: 0.5px;
 }
 
-.incoming-call-card .caller-avatar {
-  width: 80px;
-  height: 80px;
+.wa-call-center {
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  gap: 12px;
+  z-index: 2;
+}
+
+.wa-avatar-ring {
+  position: relative;
+  width: 120px;
+  height: 120px;
+  border-radius: 50%;
+  padding: 4px;
+  background: linear-gradient(135deg, #00a884, #00d4aa);
+  animation: wa-ring-pulse 2s ease-in-out infinite;
+}
+
+.wa-avatar-ring.calling {
+  animation: wa-ring-pulse 1.5s ease-in-out infinite;
+}
+
+@keyframes wa-ring-pulse {
+  0%, 100% { box-shadow: 0 0 0 0 rgba(0,168,132,0.4); }
+  50% { box-shadow: 0 0 0 20px rgba(0,168,132,0); }
+}
+
+.wa-avatar {
+  width: 100%;
+  height: 100%;
   border-radius: 50%;
   object-fit: cover;
-  margin-bottom: 16px;
-  border: 3px solid var(--primary-color);
-  animation: pulse-ring 1.5s infinite;
+  border: 3px solid #0d1f17;
 }
 
-@keyframes pulse-ring {
-  0% { box-shadow: 0 0 0 0 rgba(0, 168, 132, 0.5); }
-  70% { box-shadow: 0 0 0 16px rgba(0, 168, 132, 0); }
-  100% { box-shadow: 0 0 0 0 rgba(0, 168, 132, 0); }
+.wa-caller-name {
+  color: #fff;
+  font-size: 26px;
+  font-weight: 600;
+  margin: 0;
+  text-shadow: 0 2px 12px rgba(0,0,0,0.5);
 }
 
-.incoming-call-card h3 {
-  color: var(--text-primary);
-  font-size: 20px;
-  margin-bottom: 4px;
+.wa-call-status {
+  color: rgba(255,255,255,0.6);
+  font-size: 15px;
+  margin: 0;
 }
 
-.incoming-call-card p {
-  color: var(--text-secondary);
-  font-size: 14px;
-  margin-bottom: 28px;
+.wa-encrypted {
+  color: rgba(255,255,255,0.35);
+  font-size: 12px;
+  margin-top: 8px;
 }
 
-.call-actions {
+/* Incoming call actions */
+.wa-incoming-actions {
   display: flex;
-  justify-content: center;
-  gap: 32px;
+  gap: 80px;
 }
 
-.call-btn {
-  width: 56px;
-  height: 56px;
+.wa-action-item {
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  gap: 10px;
+}
+
+.wa-action-item span {
+  color: rgba(255,255,255,0.7);
+  font-size: 13px;
+}
+
+.wa-call-btn {
+  width: 64px;
+  height: 64px;
   border-radius: 50%;
   border: none;
   display: flex;
   align-items: center;
   justify-content: center;
   cursor: pointer;
-  transition: transform 0.2s;
+  color: #fff;
+  transition: transform 0.2s, box-shadow 0.2s;
 }
 
-.call-btn:hover {
-  transform: scale(1.1);
-}
+.wa-call-btn:active { transform: scale(0.9); }
 
-.call-btn.accept {
+.wa-call-btn.accept {
   background: linear-gradient(135deg, #00c853, #00a884);
-  color: white;
+  box-shadow: 0 4px 20px rgba(0,200,83,0.4);
+  animation: wa-btn-bounce 2s ease-in-out infinite;
 }
 
-.call-btn.reject {
+.wa-call-btn.reject {
   background: linear-gradient(135deg, #ff3d00, #d32f2f);
-  color: white;
+  box-shadow: 0 4px 20px rgba(255,61,0,0.3);
 }
 
-/* Active Call Screen */
-.active-call-overlay {
-  position: fixed;
+@keyframes wa-btn-bounce {
+  0%, 100% { transform: scale(1); }
+  50% { transform: scale(1.1); }
+}
+
+/* Active call top bar */
+.wa-call-topbar {
+  position: absolute;
+  top: 0; left: 0; right: 0;
+  padding: 16px 20px;
+  padding-top: max(16px, env(safe-area-inset-top, 16px));
+  z-index: 10;
+  text-align: center;
+  background: linear-gradient(to bottom, rgba(0,0,0,0.5), transparent);
+}
+
+.wa-topbar-info h3 {
+  color: #fff;
+  font-size: 20px;
+  font-weight: 600;
+  margin: 0 0 4px;
+  text-shadow: 0 2px 8px rgba(0,0,0,0.5);
+}
+
+.wa-call-timer-text {
+  color: rgba(255,255,255,0.7);
+  font-size: 14px;
+}
+
+/* Animated dots */
+.wa-dots span {
+  animation: wa-dot-blink 1.4s infinite both;
+}
+.wa-dots span:nth-child(2) { animation-delay: 0.2s; }
+.wa-dots span:nth-child(3) { animation-delay: 0.4s; }
+
+@keyframes wa-dot-blink {
+  0%, 80%, 100% { opacity: 0; }
+  40% { opacity: 1; }
+}
+
+/* Remote video full screen */
+.wa-remote-video {
+  position: absolute;
   inset: 0;
-  z-index: 99998;
-  background: #1a1a2e;
-  display: flex;
-  flex-direction: column;
-  align-items: center;
-  justify-content: center;
-}
-
-.call-videos {
-  flex: 1;
-  display: flex;
-  align-items: center;
-  justify-content: center;
-  width: 100%;
-  position: relative;
-}
-
-.remote-video {
   width: 100%;
   height: 100%;
   object-fit: cover;
   background: #000;
+  z-index: 0;
 }
 
-.local-video-pip {
+/* Local video PiP */
+.wa-local-pip {
   position: absolute;
-  bottom: 100px;
-  right: 20px;
-  width: 120px;
-  height: 160px;
+  top: max(80px, env(safe-area-inset-top, 80px));
+  right: 16px;
+  width: 110px;
+  height: 155px;
   border-radius: 16px;
   overflow: hidden;
-  border: 2px solid rgba(255, 255, 255, 0.3);
-  box-shadow: 0 4px 12px rgba(0,0,0,0.5);
-  z-index: 10;
+  border: 2px solid rgba(255,255,255,0.25);
+  box-shadow: 0 8px 24px rgba(0,0,0,0.5);
+  z-index: 20;
 }
 
-.local-video-pip video {
+.wa-local-pip video {
   width: 100%;
   height: 100%;
   object-fit: cover;
   transform: scaleX(-1);
 }
 
-.call-controls {
+/* Bottom controls */
+.wa-call-controls {
   position: absolute;
-  bottom: 0;
-  left: 0;
-  right: 0;
-  padding: 24px;
+  bottom: 0; left: 0; right: 0;
   display: flex;
   justify-content: center;
-  gap: 20px;
-  background: linear-gradient(transparent, rgba(0,0,0,0.7));
+  gap: 28px;
+  padding: 20px;
+  padding-bottom: max(32px, env(safe-area-inset-bottom, 32px));
+  background: linear-gradient(to top, rgba(0,0,0,0.6), transparent);
   z-index: 20;
 }
 
-.call-control-btn {
+.wa-ctrl-item {
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  gap: 8px;
+}
+
+.wa-ctrl-item span {
+  color: rgba(255,255,255,0.6);
+  font-size: 11px;
+}
+
+.wa-ctrl-btn {
   width: 52px;
   height: 52px;
   border-radius: 50%;
   border: none;
+  background: rgba(255,255,255,0.12);
+  color: #fff;
+  display: flex;
+  align-items: center;
+  justify-content: center;
   cursor: pointer;
-  display: flex;
-  align-items: center;
-  justify-content: center;
   transition: all 0.2s;
-  color: white;
-  background: rgba(255,255,255,0.15);
-  backdrop-filter: blur(4px);
+  backdrop-filter: blur(8px);
 }
 
-.call-control-btn:hover {
-  background: rgba(255,255,255,0.25);
-  transform: scale(1.05);
+.wa-ctrl-btn:active { transform: scale(0.9); }
+.wa-ctrl-btn.active {
+  background: rgba(255,255,255,0.9);
+  color: #1a1a1a;
 }
 
-.call-control-btn.end-call {
+.wa-ctrl-btn.end {
+  width: 62px;
+  height: 62px;
   background: linear-gradient(135deg, #ff3d00, #d32f2f);
-  width: 60px;
-  height: 60px;
-}
-
-.call-control-btn.end-call:hover {
-  background: #ff1744;
-}
-
-.call-timer {
-  position: absolute;
-  top: 60px;
-  left: 50%;
-  transform: translateX(-50%);
-  color: white;
-  font-size: 18px;
-  font-weight: 300;
-  z-index: 20;
-  text-shadow: 0 2px 8px rgba(0,0,0,0.5);
-}
-
-.call-caller-name {
-  position: absolute;
-  top: 30px;
-  left: 50%;
-  transform: translateX(-50%);
-  color: white;
-  font-size: 20px;
-  font-weight: 500;
-  z-index: 20;
-  text-shadow: 0 2px 8px rgba(0,0,0,0.5);
-}
-
-/* Audio-only call */
-.audio-call-placeholder {
-  display: flex;
-  flex-direction: column;
-  align-items: center;
-  justify-content: center;
-  gap: 16px;
-}
-
-.audio-call-placeholder .caller-avatar-large {
-  width: 120px;
-  height: 120px;
-  border-radius: 50%;
-  object-fit: cover;
-  border: 3px solid rgba(255,255,255,0.3);
-}
-
-.audio-call-placeholder p {
-  color: rgba(255,255,255,0.7);
-  font-size: 16px;
+  box-shadow: 0 4px 20px rgba(255,61,0,0.4);
 }
 
 @media (max-width: 768px) {

@@ -271,67 +271,113 @@ const CallManager = forwardRef(({ socket, currentUser, contacts }, ref) => {
   // Expose startCall to parent via ref
   useImperativeHandle(ref, () => ({ startCall }));
 
-  // Incoming Call Modal
+  // Incoming Call — WhatsApp Fullscreen
   if (callState === 'incoming' && callPartner) {
     return (
-      <div className="incoming-call-overlay">
-        <div className="incoming-call-card">
-          <img src={callPartner.avatar || 'https://via.placeholder.com/80'} alt="" className="caller-avatar" />
-          <h3>{callPartner.name}</h3>
-          <p>{callType === 'video' ? '📹 Görüntülü Arama' : '📞 Sesli Arama'}</p>
-          <div className="call-actions">
-            <button className="call-btn reject" onClick={rejectCall} title="Reddet">
-              <PhoneOff size={24} />
-            </button>
-            <button className="call-btn accept" onClick={answerCall} title="Kabul Et">
-              <Phone size={24} />
-            </button>
+      <div className="wa-call-screen incoming">
+        <div className="wa-call-bg"></div>
+        <div className="wa-call-content">
+          <div className="wa-call-top">
+            <span className="wa-call-label">
+              {callType === 'video' ? '📹 Görüntülü Arama' : '📞 Sesli Arama'}
+            </span>
+          </div>
+          
+          <div className="wa-call-center">
+            <div className="wa-avatar-ring">
+              <img src={callPartner.avatar || 'https://via.placeholder.com/120'} alt="" className="wa-avatar" />
+            </div>
+            <h2 className="wa-caller-name">{callPartner.name}</h2>
+            <p className="wa-call-status">Gelen arama...</p>
+            <span className="wa-encrypted">🔒 Uçtan uca şifrelenmiş</span>
+          </div>
+
+          <div className="wa-incoming-actions">
+            <div className="wa-action-item">
+              <button className="wa-call-btn reject" onClick={rejectCall}>
+                <PhoneOff size={28} />
+              </button>
+              <span>Reddet</span>
+            </div>
+            <div className="wa-action-item">
+              <button className="wa-call-btn accept" onClick={answerCall}>
+                <Phone size={28} />
+              </button>
+              <span>Kabul Et</span>
+            </div>
           </div>
         </div>
       </div>
     );
   }
 
-  // Active Call / Calling Screen
+  // Active Call / Calling Screen — WhatsApp Style
   if (callState === 'calling' || callState === 'active') {
     return (
-      <div className="active-call-overlay">
-        <span className="call-caller-name">{callPartner?.name || ''}</span>
-        <span className="call-timer">
-          {callState === 'calling' ? 'Aranıyor...' : formatDuration(callDuration)}
-        </span>
+      <div className="wa-call-screen active">
+        {/* Video background or gradient */}
+        {callType === 'video' && callState === 'active' ? (
+          <video ref={remoteVideoRef} className="wa-remote-video" autoPlay playsInline />
+        ) : (
+          <div className="wa-call-bg"></div>
+        )}
 
-        <div className="call-videos">
-          {callType === 'video' ? (
-            <video ref={remoteVideoRef} className="remote-video" autoPlay playsInline />
-          ) : (
-            <div className="audio-call-placeholder">
-              <img src={callPartner?.avatar || 'https://via.placeholder.com/120'} alt="" className="caller-avatar-large" />
-              <p>{callState === 'calling' ? 'Aranıyor...' : 'Sesli Arama'}</p>
-            </div>
-          )}
-
-          {callType === 'video' && (
-            <div className="local-video-pip">
-              <video ref={localVideoRef} autoPlay playsInline muted />
-            </div>
-          )}
+        {/* Top info */}
+        <div className="wa-call-topbar">
+          <div className="wa-topbar-info">
+            <h3>{callPartner?.name || ''}</h3>
+            <span className="wa-call-timer-text">
+              {callState === 'calling' ? 'Aranıyor' : formatDuration(callDuration)}
+              {callState === 'calling' && <span className="wa-dots"><span>.</span><span>.</span><span>.</span></span>}
+            </span>
+          </div>
         </div>
 
-        <div className="call-controls">
-          {callState === 'active' && (
-            <button className="call-control-btn" onClick={toggleMute} title={isMuted ? 'Sesi Aç' : 'Sessize Al'}>
-              {isMuted ? <MicOff size={22} /> : <Mic size={22} />}
-            </button>
-          )}
+        {/* Center — avatar for audio calls or calling state */}
+        {(callType === 'audio' || callState === 'calling') && (
+          <div className="wa-call-center">
+            <div className={`wa-avatar-ring ${callState === 'calling' ? 'calling' : ''}`}>
+              <img src={callPartner?.avatar || 'https://via.placeholder.com/120'} alt="" className="wa-avatar" />
+            </div>
+            <h2 className="wa-caller-name">{callPartner?.name}</h2>
+            <p className="wa-call-status">
+              {callState === 'calling' ? 'Aranıyor...' : 'Sesli Arama'}
+            </p>
+            <span className="wa-encrypted">🔒 Uçtan uca şifrelenmiş</span>
+          </div>
+        )}
+
+        {/* Local video PiP */}
+        {callType === 'video' && callState === 'active' && (
+          <div className="wa-local-pip">
+            <video ref={localVideoRef} autoPlay playsInline muted />
+          </div>
+        )}
+
+        {/* Bottom controls */}
+        <div className="wa-call-controls">
           {callState === 'active' && callType === 'video' && (
-            <button className="call-control-btn" onClick={toggleCamera} title={isCamOff ? 'Kamerayı Aç' : 'Kamerayı Kapat'}>
-              {isCamOff ? <VideoOff size={22} /> : <Video size={22} />}
-            </button>
+            <div className="wa-ctrl-item">
+              <button className={`wa-ctrl-btn ${isCamOff ? 'active' : ''}`} onClick={toggleCamera}>
+                {isCamOff ? <VideoOff size={22} /> : <Video size={22} />}
+              </button>
+              <span>Kamera</span>
+            </div>
           )}
-          <button className="call-control-btn end-call" onClick={endCall} title={callState === 'calling' ? 'İptal Et' : 'Aramayı Bitir'}>
-            <PhoneOff size={24} />
-          </button>
+          {callState === 'active' && (
+            <div className="wa-ctrl-item">
+              <button className={`wa-ctrl-btn ${isMuted ? 'active' : ''}`} onClick={toggleMute}>
+                {isMuted ? <MicOff size={22} /> : <Mic size={22} />}
+              </button>
+              <span>Mikrofon</span>
+            </div>
+          )}
+          <div className="wa-ctrl-item">
+            <button className="wa-ctrl-btn end" onClick={endCall}>
+              <PhoneOff size={26} />
+            </button>
+            <span>{callState === 'calling' ? 'İptal' : 'Bitir'}</span>
+          </div>
         </div>
       </div>
     );
