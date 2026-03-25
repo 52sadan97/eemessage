@@ -1,0 +1,365 @@
+import { useRef, useEffect, useState } from 'react';
+import { API_URL, getMediaUrl } from '../config';
+import { Search, MoreVertical, Paperclip, Smile, Mic, Square, Send, ChevronDown, Check, CheckCheck, ArrowLeft, Phone, Video, Camera, FileText, Download, X } from 'lucide-react';
+import EmojiPicker from 'emoji-picker-react';
+import './ChatArea.css';
+
+const ChatArea = ({ contact, messages, currentUser, onSendMessage, onDeleteMessage, onDeleteForMe, onClearChat, onBack, onStartCall, onAudioPlayed }) => {
+  const [inputText, setInputText] = useState("");
+  const [activeMsgOptions, setActiveMsgOptions] = useState(null);
+  const [isDropdownOpen, setIsDropdownOpen] = useState(false);
+  const [isRecording, setIsRecording] = useState(false);
+  const [showEmojiPicker, setShowEmojiPicker] = useState(false);
+  const [avatarPreview, setAvatarPreview] = useState(null);
+  const endOfMessagesRef = useRef(null);
+  const fileInputRef = useRef(null);
+  const mediaRecorderRef = useRef(null);
+  const audioChunksRef = useRef([]);
+  const emojiPickerRef = useRef(null);
+  const videoRecorderRef = useRef(null);
+  const videoChunksRef = useRef([]);
+  const videoPreviewRef = useRef(null);
+  const [isVideoRecording, setIsVideoRecording] = useState(false);
+
+  useEffect(() => {
+    endOfMessagesRef.current?.scrollIntoView();
+  }, [messages]);
+
+  // Close emoji picker when clicking outside
+  useEffect(() => {
+    const handleClickOutside = (e) => {
+      if (emojiPickerRef.current && !emojiPickerRef.current.contains(e.target)) {
+        setShowEmojiPicker(false);
+      }
+    };
+    if (showEmojiPicker) {
+      document.addEventListener('mousedown', handleClickOutside);
+    }
+    return () => document.removeEventListener('mousedown', handleClickOutside);
+  }, [showEmojiPicker]);
+
+  const handleEmojiClick = (emojiData) => {
+    setInputText(prev => prev + emojiData.emoji);
+  };
+
+  const handleSend = (e) => {
+    e.preventDefault();
+    if (!inputText.trim()) return;
+    onSendMessage({ text: inputText, receiverId: contact.id });
+    setInputText("");
+    setShowEmojiPicker(false);
+  };
+
+  const startRecording = async () => {
+    try {
+      const stream = await navigator.mediaDevices.getUserMedia({ audio: true });
+      const mediaRecorder = new MediaRecorder(stream);
+      mediaRecorderRef.current = mediaRecorder;
+      audioChunksRef.current = [];
+
+      mediaRecorder.ondataavailable = e => {
+        if (e.data.size > 0) audioChunksRef.current.push(e.data);
+      };
+
+      mediaRecorder.onstop = async () => {
+        const audioBlob = new Blob(audioChunksRef.current, { type: 'audio/webm' });
+        const formData = new FormData();
+        formData.append('file', audioBlob, 'ses_mesaji.webm');
+        try {
+          const res = await fetch(`${API_URL}/api/upload`, { method: 'POST', body: formData });
+          const data = await res.json();
+          if (data.url) onSendMessage({ text: '', receiverId: contact.id, isMedia: true, mediaUrl: data.url, mediaType: 'audio' });
+        } catch(err) { console.error(err); }
+      };
+
+      mediaRecorder.start();
+      setIsRecording(true);
+    } catch(err) {
+      alert("Mikrofon izni alınamadı!");
+    }
+  };
+
+  const stopRecording = () => {
+    if (mediaRecorderRef.current && isRecording) {
+      mediaRecorderRef.current.stop();
+      mediaRecorderRef.current.stream.getTracks().forEach(t => t.stop());
+      setIsRecording(false);
+    }
+  };
+
+  const handleFileUpload = async (e) => {
+    const file = e.target.files[0];
+    if (!file) return;
+    const formData = new FormData();
+    formData.append('file', file);
+    try {
+      const res = await fetch(`${API_URL}/api/upload`, { method: 'POST', body: formData });
+      const data = await res.json();
+      if (data.url) {
+        const fileName = data.originalName || file.name;
+        const displayText = ['image', 'video', 'audio'].includes(data.type) ? '' : `📎 ${fileName}`;
+        onSendMessage({ text: displayText, receiverId: contact.id, isMedia: true, mediaUrl: data.url, mediaType: data.type });
+      }
+    } catch(err) {
+      alert('Dosya yüklenemedi');
+    } finally {
+      e.target.value = ''; 
+    }
+  };
+
+  // Camera video recording
+  const startVideoRecording = async () => {
+    try {
+      const stream = await navigator.mediaDevices.getUserMedia({ video: true, audio: true });
+      if (videoPreviewRef.current) videoPreviewRef.current.srcObject = stream;
+      const recorder = new MediaRecorder(stream);
+      videoRecorderRef.current = recorder;
+      videoChunksRef.current = [];
+
+      recorder.ondataavailable = e => {
+        if (e.data.size > 0) videoChunksRef.current.push(e.data);
+      };
+
+      recorder.onstop = async () => {
+        const videoBlob = new Blob(videoChunksRef.current, { type: 'video/webm' });
+        const formData = new FormData();
+        formData.append('file', videoBlob, 'kamera_video.webm');
+        try {
+          const res = await fetch(`${API_URL}/api/upload`, { method: 'POST', body: formData });
+          const data = await res.json();
+          if (data.url) onSendMessage({ text: '', receiverId: contact.id, isMedia: true, mediaUrl: data.url, mediaType: 'video' });
+        } catch(err) { console.error(err); }
+      };
+
+      recorder.start();
+      setIsVideoRecording(true);
+    } catch(err) {
+      console.error('Kamera erişim hatası:', err);
+      alert('Kamera izni alınamadı!');
+    }
+  };
+
+  const stopVideoRecording = () => {
+    if (videoRecorderRef.current && isVideoRecording) {
+      videoRecorderRef.current.stop();
+      videoRecorderRef.current.stream.getTracks().forEach(t => t.stop());
+      if (videoPreviewRef.current) videoPreviewRef.current.srcObject = null;
+      setIsVideoRecording(false);
+    }
+  };
+
+  const formatFileSize = (bytes) => {
+    if (!bytes) return '';
+    if (bytes < 1024) return bytes + ' B';
+    if (bytes < 1024 * 1024) return (bytes / 1024).toFixed(1) + ' KB';
+    return (bytes / (1024 * 1024)).toFixed(1) + ' MB';
+  };
+
+  // Handle audio play event — mark as "read" for the sender
+  const handleAudioPlay = (msg) => {
+    if (!msg.deleted && msg.senderId !== currentUser.id && msg.status !== 'read') {
+      if (onAudioPlayed) onAudioPlayed(msg.id, msg.senderId);
+    }
+  };
+
+  if (!contact) {
+    return (
+      <div className="chat-empty-state">
+        <div className="empty-state-content glass">
+          <h2>EEMessage Web'e Hoş Geldiniz</h2>
+          <p>Mesaj gönderip almak için sol taraftan veya "Sohbet Ekle" menüsünden bir kişi seçin.</p>
+          <div className="encryption-notice">🔒 Uçtan uca şifrelenmiştir</div>
+        </div>
+      </div>
+    );
+  }
+
+  const renderStatusTicks = (status) => {
+    if(status === 'read') return <CheckCheck size={14} color="#53bdeb" strokeWidth={3} />;
+    if(status === 'delivered') return <CheckCheck size={14} color="var(--text-secondary)" strokeWidth={3} />;
+    return <Check size={14} color="var(--text-secondary)" strokeWidth={3} />; 
+  };
+
+  return (
+    <div className="chat-area" onClick={() => { setActiveMsgOptions(null); setShowEmojiPicker(false); }}>
+      <div className="chat-header">
+        <div className="chat-header-info">
+          <button className="icon-btn back-btn mobile-only" onClick={onBack}>
+            <ArrowLeft size={24} />
+          </button>
+          <img 
+            src={getMediaUrl(contact.avatar)} 
+            alt={contact.name} 
+            className="avatar clickable-avatar" 
+            onClick={() => setAvatarPreview({ src: getMediaUrl(contact.avatar), name: contact.name })}
+            title="Profil fotoğrafını büyüt"
+          />
+          <div className="contact-status">
+            <h3>{contact.name}</h3>
+            <span>{contact.online ? "Çevrimiçi" : "Çevrimdışı"}</span>
+          </div>
+        </div>
+        <div className="chat-header-actions">
+          <button className="call-header-btn" onClick={() => onStartCall && onStartCall(contact.id, 'audio')} title="Sesli Arama">
+            <Phone size={20} />
+          </button>
+          <button className="call-header-btn" onClick={() => onStartCall && onStartCall(contact.id, 'video')} title="Görüntülü Arama">
+            <Video size={20} />
+          </button>
+          <button className="icon-btn"><Search size={20} /></button>
+          <div className="dropdown-container">
+            <button className="icon-btn" onClick={(e) => {e.stopPropagation(); setIsDropdownOpen(!isDropdownOpen)}} title="Menü">
+              <MoreVertical size={20} />
+            </button>
+            {isDropdownOpen && (
+              <div className="dropdown-menu">
+                <button onClick={() => { setIsDropdownOpen(false); onClearChat(contact.id); }}>Sohbeti Temizle</button>
+              </div>
+            )}
+          </div>
+        </div>
+      </div>
+
+      <div className="chat-messages">
+        {messages.map((msg) => {
+          const isSent = msg.senderId === currentUser.id;
+          return (
+            <div key={msg.id} className={`message-row ${isSent ? 'sent' : 'received'}`}>
+              <div 
+                className={`message-bubble ${isSent ? 'sent-bubble' : 'received-bubble'} ${msg.deleted ? 'deleted-bubble' : ''}`}
+                onMouseEnter={() => setActiveMsgOptions(msg.id)}
+                onMouseLeave={() => setActiveMsgOptions(null)}
+              >
+                {msg.isMedia && !msg.deleted ? (
+                  msg.mediaType === 'video' ? <video className="message-media" controls src={getMediaUrl(msg.mediaUrl)} />
+                  : msg.mediaType === 'audio' ? (
+                    <audio 
+                      className="message-audio" 
+                      controls 
+                      src={getMediaUrl(msg.mediaUrl)} 
+                      onPlay={() => handleAudioPlay(msg)}
+                    />
+                  )
+                  : msg.mediaType === 'image' ? <img className="message-media" src={getMediaUrl(msg.mediaUrl)} alt="Eklenti" />
+                  : (
+                    /* PDF, document, archive, etc. */
+                    <a href={getMediaUrl(msg.mediaUrl)} target="_blank" rel="noopener noreferrer" className="file-attachment" download>
+                      <FileText size={32} />
+                      <div className="file-info">
+                        <span className="file-name">{msg.text || 'Dosya'}</span>
+                        <span className="file-action"><Download size={14} /> İndir</span>
+                      </div>
+                    </a>
+                  )
+                ) : null}
+                
+                <span className="message-text" style={{ fontStyle: msg.deleted ? 'italic' : 'normal', color: msg.deleted ? 'var(--text-secondary)' : 'inherit' }}>
+                  {msg.text}
+                  {isSent && <span style={{display: 'inline-block', width: '60px', height: '10px'}}></span>}
+                </span>
+
+                <span className="message-meta">
+                  {msg.timestamp}
+                  {isSent && !msg.deleted && <span className="read-ticks">{renderStatusTicks(msg.status)}</span>}
+                </span>
+
+                {/* Msg Options Chevron */}
+                {!msg.deleted && activeMsgOptions === msg.id && (
+                  <div className="msg-options-wrapper" onClick={(e) => e.stopPropagation()}>
+                    <button className="msg-chevron-overlay">
+                      <ChevronDown size={18} />
+                    </button>
+                    <div className="msg-dropdown">
+                       {isSent && <button onClick={() => onDeleteMessage(msg.id)}>Herkesten Sil</button>}
+                       <button onClick={() => onDeleteForMe(msg.id)}>Benden Sil</button>
+                    </div>
+                  </div>
+                )}
+              </div>
+            </div>
+          );
+        })}
+        <div ref={endOfMessagesRef} />
+      </div>
+
+      <form className="chat-input-area" onSubmit={handleSend} onClick={(e) => e.stopPropagation()}>
+        {/* Video Recording Preview */}
+        {isVideoRecording && (
+          <div className="video-recording-overlay">
+            <video ref={videoPreviewRef} autoPlay playsInline muted className="video-recording-preview" />
+            <div className="video-rec-controls">
+              <span className="video-rec-indicator">🔴 Kayıt yapılıyor...</span>
+              <button type="button" className="video-rec-stop" onClick={stopVideoRecording}>
+                <Square size={20} /> Gönder
+              </button>
+            </div>
+          </div>
+        )}
+
+        {/* Emoji Picker */}
+        <div style={{ position: 'relative' }} ref={emojiPickerRef}>
+          <button type="button" className="icon-btn" onClick={(e) => { e.stopPropagation(); setShowEmojiPicker(prev => !prev); }}>
+            <Smile size={24} />
+          </button>
+          {showEmojiPicker && (
+            <div className="emoji-picker-container" onClick={(e) => e.stopPropagation()}>
+              <EmojiPicker 
+                onEmojiClick={handleEmojiClick} 
+                width={320} 
+                height={400}
+                searchDisabled={false}
+                skinTonesDisabled
+                previewConfig={{ showPreview: false }}
+              />
+            </div>
+          )}
+        </div>
+
+        <input type="file" style={{display: 'none'}} ref={fileInputRef} onChange={handleFileUpload} accept="*" />
+        <button type="button" className="icon-btn" onClick={() => fileInputRef.current?.click()} title="Dosya Gönder">
+          <Paperclip size={24} />
+        </button>
+        <button type="button" className="icon-btn" onClick={startVideoRecording} title="Kamerayla Video Çek">
+          <Camera size={24} />
+        </button>
+        
+        {isRecording ? (
+          <div className="recording-status" style={{flex: 1, display: 'flex', alignItems: 'center', color: 'var(--danger)'}}>
+            <span className="blink-dot" style={{width: 10, height: 10, borderRadius: '50%', background: 'red', marginRight: 10, animation: 'blink 1s infinite'}}></span>
+            Ses Kaydediliyor...
+          </div>
+        ) : (
+          <input type="text" placeholder="Bir mesaj yazın" value={inputText} onChange={(e) => setInputText(e.target.value)} />
+        )}
+        
+        {inputText.trim() ? (
+          <button type="submit" className="icon-btn send-btn"><Send size={24} /></button>
+        ) : (
+          isRecording ? (
+            <button type="button" className="icon-btn mic-btn" onClick={stopRecording} style={{color: 'var(--danger)'}}>
+              <Square size={24} />
+            </button>
+          ) : (
+            <button type="button" className="icon-btn mic-btn" onClick={startRecording} title="Ses Kaydet">
+              <Mic size={24} />
+            </button>
+          )
+        )}
+      </form>
+
+      {/* Avatar Lightbox */}
+      {avatarPreview && (
+        <div className="avatar-lightbox" onClick={() => setAvatarPreview(null)}>
+          <button className="lightbox-close" onClick={() => setAvatarPreview(null)}>
+            <X size={28} />
+          </button>
+          <div className="lightbox-content" onClick={(e) => e.stopPropagation()}>
+            <img src={avatarPreview.src} alt={avatarPreview.name} className="lightbox-image" />
+            <span className="lightbox-name">{avatarPreview.name}</span>
+          </div>
+        </div>
+      )}
+    </div>
+  );
+};
+export default ChatArea;

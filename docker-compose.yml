@@ -1,0 +1,38 @@
+version: '3.8'
+
+services:
+  eemessage-api:
+    build:
+      context: .
+      dockerfile: Dockerfile.server
+    container_name: eemessage-api
+    restart: unless-stopped
+    ports:
+      - "3010:3010"
+    environment:
+      # Siteniz yayına alınca kendi ip adresinizle ya da https://eemessage.hepsikalite.com adresiyle değiştirebilirsiniz
+      - BACKEND_URL=http://localhost:3010
+    volumes:
+      # Tüm veritabanı (SQLite) ve Uploads klasörünü tek bir volume'de güvenle tut
+      - eemessage_data:/app/server
+    networks:
+      - eemessage_net
+
+  eemessage-web:
+    build:
+      context: .
+      dockerfile: Dockerfile.client
+    container_name: eemessage-web
+    restart: unless-stopped
+    ports:
+      - "7010:80"
+    depends_on:
+      - eemessage-api
+    networks:
+      - eemessage_net
+
+volumes:
+  eemessage_data:
+
+networks:
+  eemessage_net:

@@ -1,0 +1,17 @@
+FROM node:20-alpine
+WORKDIR /app
+
+# SQLite3 derlemesi için gerekli paketler (better-sqlite3)
+RUN apk add --no-cache python3 make g++ sqlite-dev
+
+# Önce server package.json'ı kopyala ve server bağımlılıklarını kur
+COPY server/package*.json ./server/
+WORKDIR /app/server
+RUN npm install
+
+# Sonra server kaynak kodlarını kopyala
+COPY server/ ./
+
+EXPOSE 3010
+
+CMD ["node", "index.js"]
