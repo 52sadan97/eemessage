@@ -10,33 +10,28 @@ const Auth = ({ onLogin }) => {
 
   const handleSubmit = async (e) => {
     e.preventDefault();
+    if (isLogin) {
+      if (!formData.email || !formData.password) return alert('Lütfen tüm alanları doldurun.');
+    } else {
+      if (!formData.name || !formData.email || !formData.password) return alert('Lütfen tüm alanları doldurun.');
+    }
     setLoading(true);
     try {
-      if (isLogin) {
-        if (!formData.email || !formData.password) return alert('Lütfen tüm alanları doldurun.');
-        const res = await fetch(`${API_URL}/api/auth/login`, {
-          method: 'POST',
-          headers: { 'Content-Type': 'application/json' },
-          body: JSON.stringify({ email: formData.email, password: formData.password })
-        });
-        const data = await res.json();
-        if (!res.ok) throw new Error(data.error || 'Giriş başarısız.');
-        
-        localStorage.setItem('eemessage_token', data.token);
-        onLogin(data.user);
-      } else {
-        if (!formData.name || !formData.email || !formData.password) return alert('Lütfen tüm alanları doldurun.');
-        const res = await fetch(`${API_URL}/api/auth/register`, {
-          method: 'POST',
-          headers: { 'Content-Type': 'application/json' },
-          body: JSON.stringify(formData)
-        });
-        const data = await res.json();
-        if (!res.ok) throw new Error(data.error || 'Kayıt başarısız.');
-        
-        localStorage.setItem('eemessage_token', data.token);
-        onLogin(data.user);
-      }
+      const endpoint = isLogin ? '/api/auth/login' : '/api/auth/register';
+      const body = isLogin 
+        ? { email: formData.email, password: formData.password }
+        : formData;
+      
+      const res = await fetch(`${API_URL}${endpoint}`, {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify(body)
+      });
+      const data = await res.json();
+      if (!res.ok) throw new Error(data.error || (isLogin ? 'Giriş başarısız.' : 'Kayıt başarısız.'));
+      
+      localStorage.setItem('eemessage_token', data.token);
+      onLogin(data.user);
     } catch (err) {
       alert(err.message);
     } finally {
