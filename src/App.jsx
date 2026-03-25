@@ -97,9 +97,9 @@ function App() {
               // Use the mark-read API for persistent + socket-based sync
               markChatAsRead(msg.senderId.toString());
            } else {
-              toast.info(`Yeni mesaj: ${msg.text || '📸 Medya'}`);
-              if ("Notification" in window && Notification.permission === 'granted' && document.hidden) {
-                 new Notification("EEMessage", { body: `Yeni mesaj: ${msg.text || '📸 Medya'}`, icon: "/pwa-192x192.svg" });
+              toast.info(`Yeni mesaj: ${msg.text || '📸 Medya'}`, { icon: '💬' });
+              if ("Notification" in window && Notification.permission === 'granted') {
+                 new Notification("EEMessage", { body: `Yeni mesaj: ${msg.text || '📸 Medya'}`, icon: "/pwa-192x192.svg", tag: msg.id, vibrate: [200, 100, 200] });
               }
               // Mark as delivered
               socket.emit('update_message_status', { messageId: msg.id, status: 'delivered', senderId: msg.senderId });
