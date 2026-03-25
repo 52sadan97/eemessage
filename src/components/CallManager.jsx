@@ -6,6 +6,8 @@ const ICE_SERVERS = [
   { urls: 'stun:stun.l.google.com:19302' },
   { urls: 'stun:stun1.l.google.com:19302' },
   { urls: 'stun:stun2.l.google.com:19302' },
+  { urls: 'turn:openrelay.metered.ca:80', username: 'openrelayproject', credential: 'openrelayproject' },
+  { urls: 'turn:openrelay.metered.ca:443', username: 'openrelayproject', credential: 'openrelayproject' },
 ];
 
 const CallManager = forwardRef(({ socket, currentUser, contacts }, ref) => {
@@ -24,6 +26,7 @@ const CallManager = forwardRef(({ socket, currentUser, contacts }, ref) => {
   const timerRef = useRef(null);
   const callTimeoutRef = useRef(null);
   const callStateRef = useRef('idle');
+  const signalSentRef = useRef(false);
 
   // Keep ref in sync with state
   useEffect(() => { callStateRef.current = callState; }, [callState]);
@@ -33,6 +36,7 @@ const CallManager = forwardRef(({ socket, currentUser, contacts }, ref) => {
     if (localStreamRef.current) { localStreamRef.current.getTracks().forEach(t => t.stop()); localStreamRef.current = null; }
     if (timerRef.current) { clearInterval(timerRef.current); timerRef.current = null; }
     if (callTimeoutRef.current) { clearTimeout(callTimeoutRef.current); callTimeoutRef.current = null; }
+    signalSentRef.current = false;
     setCallState('idle');
     setCallPartner(null);
     setCallDuration(0);
@@ -61,6 +65,7 @@ const CallManager = forwardRef(({ socket, currentUser, contacts }, ref) => {
     if (!socket) return;
 
     const handleIncomingCall = ({ signal, from, name, callType: type }) => {
+      console.log('Incoming call from', name, 'type:', type);
       incomingSignalRef.current = signal;
       setCallType(type || 'video');
       const partner = contacts.find(c => c.id.toString() === from.toString());
@@ -69,6 +74,7 @@ const CallManager = forwardRef(({ socket, currentUser, contacts }, ref) => {
     };
 
     const handleCallAccepted = ({ signal }) => {
+      console.log('Call accepted, signaling peer');
       if (callTimeoutRef.current) { clearTimeout(callTimeoutRef.current); callTimeoutRef.current = null; }
       if (peerRef.current) peerRef.current.signal(signal);
       setCallState('active');
@@ -90,17 +96,25 @@ const CallManager = forwardRef(({ socket, currentUser, contacts }, ref) => {
 
   // Helper: get media stream with fallback
   const getMediaStream = async (type) => {
+    const isSecure = window.location.protocol === 'https:' || window.location.hostname === 'localhost';
+    
     if (type === 'video') {
       try {
         return await navigator.mediaDevices.getUserMedia({ video: true, audio: true });
       } catch (err) {
-        console.warn('Video+Audio failed, trying audio-only:', err.name);
+        console.warn('Video+Audio failed:', err.name);
+        if (err.name === 'NotAllowedError' && !isSecure) {
+          alert('Kamera/mikrofon izni için HTTPS gereklidir. Sadece sesli arama deneniyor...');
+        }
         try {
           const audioStream = await navigator.mediaDevices.getUserMedia({ audio: true, video: false });
           setCallType('audio');
           return audioStream;
         } catch (err2) {
-          console.error('Audio-only fallback also failed:', err2.name, err2.message);
+          console.error('Audio fallback also failed:', err2.name);
+          if (!isSecure) {
+            alert('HTTPS olmadan kamera ve mikrofon erişimi sağlanamıyor. Lütfen HTTPS kullanın.');
+          }
           throw err2;
         }
       }
@@ -116,6 +130,7 @@ const CallManager = forwardRef(({ socket, currentUser, contacts }, ref) => {
     setCallPartner(partner);
     setCallType(type);
     setCallState('calling');
+    signalSentRef.current = false;
 
     // 30-second timeout for unanswered calls
     callTimeoutRef.current = setTimeout(() => {
@@ -137,32 +152,35 @@ const CallManager = forwardRef(({ socket, currentUser, contacts }, ref) => {
 
       const peer = new SimplePeer({
         initiator: true,
-        trickle: true,
+        trickle: false,
         stream,
         config: { iceServers: ICE_SERVERS }
       });
 
       peer.on('signal', (data) => {
-        socket.emit('callUser', {
-          userToCall: contactId,
-          signalData: data,
-          from: currentUser.id,
-          name: currentUser.name,
-          callType: actualType
-        });
+        if (!signalSentRef.current) {
+          signalSentRef.current = true;
+          console.log('Sending call signal to', contactId);
+          socket.emit('callUser', {
+            userToCall: contactId,
+            signalData: data,
+            from: currentUser.id,
+            name: currentUser.name,
+            callType: actualType
+          });
+        }
       });
 
       peer.on('stream', (remoteStream) => {
+        console.log('Got remote stream');
         if (remoteVideoRef.current) remoteVideoRef.current.srcObject = remoteStream;
       });
 
       peer.on('error', (e) => {
-        console.error('Peer error:', e);
-        // Only cleanup if still in active/calling state
+        console.error('Peer error:', e.message);
         if (callStateRef.current !== 'idle') cleanup();
       });
 
-      // Only cleanup on close if the call was active (not during signaling)
       peer.on('close', () => {
         if (callStateRef.current === 'active') cleanup();
       });
@@ -170,7 +188,6 @@ const CallManager = forwardRef(({ socket, currentUser, contacts }, ref) => {
       peerRef.current = peer;
     } catch (err) {
       console.error('getUserMedia hatası:', err.name, err.message);
-      // Send missed call message since we couldn't even start
       sendMissedCallMessage(contactId, type);
       socket.emit('callEnded', { to: partner.id });
       cleanup();
@@ -185,24 +202,27 @@ const CallManager = forwardRef(({ socket, currentUser, contacts }, ref) => {
 
       const peer = new SimplePeer({
         initiator: false,
-        trickle: true,
+        trickle: false,
         stream,
         config: { iceServers: ICE_SERVERS }
       });
 
       peer.on('signal', (data) => {
+        console.log('Sending answer signal');
         socket.emit('answerCall', { to: callPartner.id, signal: data });
       });
 
       peer.on('stream', (remoteStream) => {
+        console.log('Got remote stream (answer)');
         if (remoteVideoRef.current) remoteVideoRef.current.srcObject = remoteStream;
       });
 
-      peer.on('error', (e) => { console.error('Peer error:', e); cleanup(); });
+      peer.on('error', (e) => { console.error('Peer error:', e.message); cleanup(); });
       peer.on('close', () => {
         if (callStateRef.current === 'active') cleanup();
       });
 
+      // Signal the incoming offer AFTER setting up listeners
       peer.signal(incomingSignalRef.current);
       peerRef.current = peer;
       setCallState('active');
