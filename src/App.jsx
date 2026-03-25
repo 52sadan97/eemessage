@@ -242,7 +242,7 @@ function App() {
   // Mobile App Container Logic
   return (
     <div className={`app-container ${selectedContactId ? 'chat-active' : 'sidebar-active'}`}>
-      <ToastContainer position="top-right" autoClose={3000} theme={theme} />
+      <ToastContainer position="top-center" autoClose={3000} theme={theme} newestOnTop hideProgressBar={false} closeOnClick pauseOnHover style={{ top: '10px', fontSize: '14px' }} />
       
       <div className="sidebar-wrapper">
         <Sidebar 
