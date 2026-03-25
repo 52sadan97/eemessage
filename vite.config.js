@@ -7,7 +7,7 @@ export default defineConfig({
     react(),
     VitePWA({
       registerType: 'autoUpdate',
-      includeAssets: ['favicon.ico', 'apple-touch-icon.png', 'mask-icon.svg'],
+      includeAssets: ['app-icon.jpg'],
       manifest: {
         name: 'EEMessage Web',
         short_name: 'EEMessage',
@@ -17,14 +17,16 @@ export default defineConfig({
         display: 'standalone',
         icons: [
           {
-            src: 'pwa-192x192.svg',
+            src: 'app-icon.jpg',
             sizes: '192x192',
-            type: 'image/svg+xml'
+            type: 'image/jpeg',
+            purpose: 'any'
           },
           {
-            src: 'pwa-512x512.svg',
+            src: 'app-icon.jpg',
             sizes: '512x512',
-            type: 'image/svg+xml'
+            type: 'image/jpeg',
+            purpose: 'any maskable'
           }
         ]
       }
