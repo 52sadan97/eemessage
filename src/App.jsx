@@ -8,6 +8,7 @@ import Sidebar from './components/Sidebar';
 import ChatArea from './components/ChatArea';
 import Auth from './components/Auth';
 import CallManager from './components/CallManager';
+import AdminPanel from './components/AdminPanel';
 import './App.css';
 
 const socket = io(API_URL, { autoConnect: false });
@@ -245,6 +246,12 @@ function App() {
   };
 
   if (isInitializing) return <div className="loader-screen">Yükleniyor...</div>;
+
+  // Admin panel route: #/admin
+  if (window.location.hash === '#/admin') {
+    return <AdminPanel onBack={() => { window.location.hash = ''; window.location.reload(); }} />;
+  }
+
   if (!currentUser) return <Auth onLogin={setCurrentUser} />;
 
   const selectedContact = contacts.find(c => c.id === selectedContactId);

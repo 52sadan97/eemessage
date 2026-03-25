@@ -201,6 +201,106 @@ app.post('/api/auth/update_profile', async (req, res) => {
   } catch(err) { res.status(500).json({ error: 'Sunucu hatası' }); }
 });
 
+// ===== ADMIN PANEL API =====
+const ADMIN_EMAIL = 'admin@eemessage.com';
+const ADMIN_PASSWORD = 'admin123'; // Üretimde değiştirin!
+
+// Admin login
+app.post('/api/admin/login', async (req, res) => {
+  const { email, password } = req.body;
+  if (email === ADMIN_EMAIL && password === ADMIN_PASSWORD) {
+    const token = jwt.sign({ admin: true }, JWT_SECRET, { expiresIn: '24h' });
+    return res.json({ token });
+  }
+  res.status(401).json({ error: 'Geçersiz admin bilgileri.' });
+});
+
+// Admin auth middleware
+const adminAuth = (req, res, next) => {
+  try {
+    const token = req.headers.authorization?.split(' ')[1];
+    if (!token) return res.status(401).json({ error: 'Yetkisiz.' });
+    const decoded = jwt.verify(token, JWT_SECRET);
+    if (!decoded.admin) return res.status(403).json({ error: 'Admin yetkisi gerekli.' });
+    next();
+  } catch(e) { res.status(401).json({ error: 'Geçersiz token.' }); }
+};
+
+// Dashboard stats
+app.get('/api/admin/stats', adminAuth, (req, res) => {
+  const totalUsers = db.prepare('SELECT COUNT(*) as count FROM users').get().count;
+  const totalMessages = db.prepare('SELECT COUNT(*) as count FROM messages').get().count;
+  const totalMedia = db.prepare('SELECT COUNT(*) as count FROM messages WHERE isMedia = 1').get().count;
+  const todayStart = new Date(); todayStart.setHours(0,0,0,0);
+  const todayMessages = db.prepare('SELECT COUNT(*) as count FROM messages WHERE createdAt >= ?').get(todayStart.getTime()).count;
+  const onlineUsers = activeSockets.size;
+  res.json({ totalUsers, totalMessages, totalMedia, todayMessages, onlineUsers });
+});
+
+// List all users
+app.get('/api/admin/users', adminAuth, (req, res) => {
+  const users = db.prepare('SELECT id, email, name, avatar, lastSeen FROM users').all();
+  const activeUserIds = Array.from(activeSockets.values()).map(u => u.id.toString());
+  const usersWithStatus = users.map(u => ({
+    ...u,
+    online: activeUserIds.includes(u.id.toString()),
+    messageCount: db.prepare('SELECT COUNT(*) as count FROM messages WHERE senderId = ?').get(u.id).count
+  }));
+  res.json(usersWithStatus);
+});
+
+// Create user (admin)
+app.post('/api/admin/users', adminAuth, async (req, res) => {
+  try {
+    const { name, email, password } = req.body;
+    if (!name || !email || !password) return res.status(400).json({ error: 'Tüm alanlar gerekli.' });
+    if (getUserByEmail.get(email)) return res.status(400).json({ error: 'Bu email zaten var.' });
+    const salt = await bcrypt.genSalt(10);
+    const hashed = await bcrypt.hash(password, salt);
+    const newId = Date.now().toString() + Math.random().toString(36).substr(2, 9);
+    const avatar = 'https://i.pravatar.cc/150?u=' + email;
+    insertUser.run(newId, email, hashed, name, avatar, Date.now());
+    res.json({ success: true, user: { id: newId, name, email, avatar } });
+  } catch(e) { res.status(500).json({ error: 'Sunucu hatası.' }); }
+});
+
+// Delete user
+app.delete('/api/admin/users/:id', adminAuth, (req, res) => {
+  try {
+    const user = getUserById.get(req.params.id);
+    if (!user) return res.status(404).json({ error: 'Kullanıcı bulunamadı.' });
+    db.prepare('DELETE FROM users WHERE id = ?').run(req.params.id);
+    db.prepare('DELETE FROM messages WHERE senderId = ? OR receiverId = ?').run(req.params.id, req.params.id);
+    res.json({ success: true });
+  } catch(e) { res.status(500).json({ error: 'Sunucu hatası.' }); }
+});
+
+// List messages with filters
+app.get('/api/admin/messages', adminAuth, (req, res) => {
+  const { userId, limit = 100, offset = 0 } = req.query;
+  let query = 'SELECT m.*, su.name as senderName, su.email as senderEmail, ru.name as receiverName, ru.email as receiverEmail FROM messages m LEFT JOIN users su ON m.senderId = su.id LEFT JOIN users ru ON m.receiverId = ru.id';
+  const params = [];
+  if (userId) {
+    query += ' WHERE m.senderId = ? OR m.receiverId = ?';
+    params.push(userId, userId);
+  }
+  query += ' ORDER BY m.createdAt DESC LIMIT ? OFFSET ?';
+  params.push(parseInt(limit), parseInt(offset));
+  const messages = db.prepare(query).all(...params);
+  const total = userId 
+    ? db.prepare('SELECT COUNT(*) as count FROM messages WHERE senderId = ? OR receiverId = ?').get(userId, userId).count
+    : db.prepare('SELECT COUNT(*) as count FROM messages').get().count;
+  res.json({ messages, total });
+});
+
+// Delete message (admin)
+app.delete('/api/admin/messages/:id', adminAuth, (req, res) => {
+  try {
+    db.prepare('DELETE FROM messages WHERE id = ?').run(req.params.id);
+    res.json({ success: true });
+  } catch(e) { res.status(500).json({ error: 'Sunucu hatası.' }); }
+});
+
 const activeSockets = new Map();
 
 io.on('connection', (socket) => {
