@@ -13,8 +13,8 @@ services:
       # Siteniz yayına alınca kendi ip adresinizle ya da https://eemessage.hepsikalite.com adresiyle değiştirebilirsiniz
       - BACKEND_URL=http://localhost:3010
     volumes:
-      # Tüm veritabanı (SQLite) ve Uploads klasörünü tek bir volume'de güvenle tut
-      - eemessage_data:/app/server
+      - eemessage_db:/app/server/database.sqlite
+      - eemessage_uploads:/app/server/uploads
     networks:
       - eemessage_net
 
@@ -32,7 +32,8 @@ services:
       - eemessage_net
 
 volumes:
-  eemessage_data:
+  eemessage_db:
+  eemessage_uploads:
 
 networks:
   eemessage_net:
