@@ -27,6 +27,7 @@ const ChatArea = ({ contact, messages, currentUser, onSendMessage, onDeleteMessa
   const recordingTimerRef = useRef(null);
   const videoTimerRef = useRef(null);
   const cameraStreamRef = useRef(null);
+  const recCancelledRef = useRef(false);
 
   useEffect(() => {
     endOfMessagesRef.current?.scrollIntoView();
@@ -69,6 +70,10 @@ const ChatArea = ({ contact, messages, currentUser, onSendMessage, onDeleteMessa
       };
 
       mediaRecorder.onstop = async () => {
+        if (recCancelledRef.current) {
+          recCancelledRef.current = false;
+          return; // İptal edildi, gönderme
+        }
         const audioBlob = new Blob(audioChunksRef.current, { type: 'audio/webm' });
         const formData = new FormData();
         formData.append('file', audioBlob, 'ses_mesaji.webm');
@@ -82,6 +87,7 @@ const ChatArea = ({ contact, messages, currentUser, onSendMessage, onDeleteMessa
       mediaRecorder.start();
       setIsRecording(true);
       setRecordingTimer(0);
+      recCancelledRef.current = false;
       recordingTimerRef.current = setInterval(() => setRecordingTimer(p => p + 1), 1000);
     } catch(err) {
       alert("Mikrofon izni alınamadı!");
@@ -96,6 +102,17 @@ const ChatArea = ({ contact, messages, currentUser, onSendMessage, onDeleteMessa
       setRecordingTimer(0);
       if (recordingTimerRef.current) { clearInterval(recordingTimerRef.current); recordingTimerRef.current = null; }
     }
+  };
+
+  const cancelRecording = () => {
+    recCancelledRef.current = true;
+    if (mediaRecorderRef.current && isRecording) {
+      mediaRecorderRef.current.stop();
+      mediaRecorderRef.current.stream.getTracks().forEach(t => t.stop());
+    }
+    setIsRecording(false);
+    setRecordingTimer(0);
+    if (recordingTimerRef.current) { clearInterval(recordingTimerRef.current); recordingTimerRef.current = null; }
   };
 
   const handleFileUpload = async (e) => {
@@ -393,7 +410,7 @@ const ChatArea = ({ contact, messages, currentUser, onSendMessage, onDeleteMessa
         
         {isRecording ? (
           <div className="recording-bar">
-            <button type="button" className="rec-cancel" onClick={() => { mediaRecorderRef.current?.stream.getTracks().forEach(t => t.stop()); setIsRecording(false); setRecordingTimer(0); if (recordingTimerRef.current) clearInterval(recordingTimerRef.current); }} title="İptal">
+            <button type="button" className="rec-cancel" onClick={cancelRecording} title="İptal">
               <X size={20} />
             </button>
             <div className="rec-pulse"></div>
