@@ -72,15 +72,24 @@ const AdminPanel = ({ onBack }) => {
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify(loginForm)
       });
-      const data = await res.json();
-      if (res.ok) {
+      const text = await res.text();
+      let data;
+      try { data = JSON.parse(text); } catch { data = null; }
+      
+      if (res.ok && data?.token) {
         setToken(data.token);
         localStorage.setItem('admin_token', data.token);
         setIsLoggedIn(true);
-      } else {
+      } else if (data?.error) {
         alert(data.error);
+      } else {
+        alert(`Sunucu hatası (${res.status}): API endpoint bulunamadı. Sunucu rebuild yapıldığından emin olun.`);
+        console.error('Admin login response:', res.status, text.substring(0, 200));
       }
-    } catch(e) { alert('Bağlantı hatası'); }
+    } catch(e) {
+      alert(`Bağlantı hatası: ${e.message}\nAPI URL: ${API_URL}/api/admin/login`);
+      console.error('Admin login error:', e);
+    }
     setLoading(false);
   };
 
