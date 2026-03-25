@@ -12,6 +12,10 @@ const ChatArea = ({ contact, messages, currentUser, onSendMessage, onDeleteMessa
   const [showEmojiPicker, setShowEmojiPicker] = useState(false);
   const [avatarPreview, setAvatarPreview] = useState(null);
   const [recordingTimer, setRecordingTimer] = useState(0);
+  const [isCameraOpen, setIsCameraOpen] = useState(false);
+  const [isVideoRecording, setIsVideoRecording] = useState(false);
+  const [videoTimer, setVideoTimer] = useState(0);
+  const [facingMode, setFacingMode] = useState('environment');
   const endOfMessagesRef = useRef(null);
   const fileInputRef = useRef(null);
   const mediaRecorderRef = useRef(null);
@@ -21,7 +25,8 @@ const ChatArea = ({ contact, messages, currentUser, onSendMessage, onDeleteMessa
   const videoChunksRef = useRef([]);
   const videoPreviewRef = useRef(null);
   const recordingTimerRef = useRef(null);
-  const [isVideoRecording, setIsVideoRecording] = useState(false);
+  const videoTimerRef = useRef(null);
+  const cameraStreamRef = useRef(null);
 
   useEffect(() => {
     endOfMessagesRef.current?.scrollIntoView();
@@ -113,44 +118,98 @@ const ChatArea = ({ contact, messages, currentUser, onSendMessage, onDeleteMessa
     }
   };
 
-  // Camera video recording
-  const startVideoRecording = async () => {
+  // ===== WhatsApp-style Camera =====
+  const openCamera = async () => {
     try {
-      const stream = await navigator.mediaDevices.getUserMedia({ video: true, audio: true });
-      if (videoPreviewRef.current) videoPreviewRef.current.srcObject = stream;
-      const recorder = new MediaRecorder(stream);
-      videoRecorderRef.current = recorder;
-      videoChunksRef.current = [];
-
-      recorder.ondataavailable = e => {
-        if (e.data.size > 0) videoChunksRef.current.push(e.data);
-      };
-
-      recorder.onstop = async () => {
-        const videoBlob = new Blob(videoChunksRef.current, { type: 'video/webm' });
-        const formData = new FormData();
-        formData.append('file', videoBlob, 'kamera_video.webm');
-        try {
-          const res = await fetch(`${API_URL}/api/upload`, { method: 'POST', body: formData });
-          const data = await res.json();
-          if (data.url) onSendMessage({ text: '', receiverId: contact.id, isMedia: true, mediaUrl: data.url, mediaType: 'video' });
-        } catch(err) { console.error(err); }
-      };
-
-      recorder.start();
-      setIsVideoRecording(true);
+      const stream = await navigator.mediaDevices.getUserMedia({ 
+        video: { facingMode }, 
+        audio: true 
+      });
+      cameraStreamRef.current = stream;
+      setIsCameraOpen(true);
+      setTimeout(() => {
+        if (videoPreviewRef.current) videoPreviewRef.current.srcObject = stream;
+      }, 50);
     } catch(err) {
-      console.error('Kamera erişim hatası:', err);
+      console.error('Kamera hatası:', err);
       alert('Kamera izni alınamadı!');
     }
   };
 
-  const stopVideoRecording = () => {
+  const closeCamera = () => {
+    if (cameraStreamRef.current) {
+      cameraStreamRef.current.getTracks().forEach(t => t.stop());
+      cameraStreamRef.current = null;
+    }
+    if (videoTimerRef.current) { clearInterval(videoTimerRef.current); videoTimerRef.current = null; }
+    setIsCameraOpen(false);
+    setIsVideoRecording(false);
+    setVideoTimer(0);
+  };
+
+  const switchCamera = async () => {
+    const newMode = facingMode === 'user' ? 'environment' : 'user';
+    setFacingMode(newMode);
+    if (cameraStreamRef.current) {
+      cameraStreamRef.current.getTracks().forEach(t => t.stop());
+    }
+    try {
+      const stream = await navigator.mediaDevices.getUserMedia({ video: { facingMode: newMode }, audio: true });
+      cameraStreamRef.current = stream;
+      if (videoPreviewRef.current) videoPreviewRef.current.srcObject = stream;
+    } catch(err) {
+      console.error('Kamera değiştirme hatası:', err);
+    }
+  };
+
+  const takePhoto = () => {
+    if (!videoPreviewRef.current) return;
+    const canvas = document.createElement('canvas');
+    const video = videoPreviewRef.current;
+    canvas.width = video.videoWidth;
+    canvas.height = video.videoHeight;
+    canvas.getContext('2d').drawImage(video, 0, 0);
+    canvas.toBlob(async (blob) => {
+      const formData = new FormData();
+      formData.append('file', blob, 'kamera_foto.jpg');
+      try {
+        const res = await fetch(`${API_URL}/api/upload`, { method: 'POST', body: formData });
+        const data = await res.json();
+        if (data.url) onSendMessage({ text: '', receiverId: contact.id, isMedia: true, mediaUrl: data.url, mediaType: 'image' });
+      } catch(err) { console.error(err); }
+      closeCamera();
+    }, 'image/jpeg', 0.9);
+  };
+
+  const startVideoRec = () => {
+    if (!cameraStreamRef.current) return;
+    const recorder = new MediaRecorder(cameraStreamRef.current);
+    videoRecorderRef.current = recorder;
+    videoChunksRef.current = [];
+    recorder.ondataavailable = e => { if (e.data.size > 0) videoChunksRef.current.push(e.data); };
+    recorder.onstop = async () => {
+      const blob = new Blob(videoChunksRef.current, { type: 'video/webm' });
+      const formData = new FormData();
+      formData.append('file', blob, 'kamera_video.webm');
+      try {
+        const res = await fetch(`${API_URL}/api/upload`, { method: 'POST', body: formData });
+        const data = await res.json();
+        if (data.url) onSendMessage({ text: '', receiverId: contact.id, isMedia: true, mediaUrl: data.url, mediaType: 'video' });
+      } catch(err) { console.error(err); }
+      closeCamera();
+    };
+    recorder.start();
+    setIsVideoRecording(true);
+    setVideoTimer(0);
+    videoTimerRef.current = setInterval(() => setVideoTimer(p => p + 1), 1000);
+  };
+
+  const stopVideoRec = () => {
     if (videoRecorderRef.current && isVideoRecording) {
       videoRecorderRef.current.stop();
-      videoRecorderRef.current.stream.getTracks().forEach(t => t.stop());
-      if (videoPreviewRef.current) videoPreviewRef.current.srcObject = null;
+      if (videoTimerRef.current) { clearInterval(videoTimerRef.current); videoTimerRef.current = null; }
       setIsVideoRecording(false);
+      setVideoTimer(0);
     }
   };
 
@@ -304,18 +363,6 @@ const ChatArea = ({ contact, messages, currentUser, onSendMessage, onDeleteMessa
       </div>
 
       <form className="chat-input-area" onSubmit={handleSend} onClick={(e) => e.stopPropagation()}>
-        {/* Video Recording Preview */}
-        {isVideoRecording && (
-          <div className="video-recording-overlay">
-            <video ref={videoPreviewRef} autoPlay playsInline muted className="video-recording-preview" />
-            <div className="video-rec-controls">
-              <span className="video-rec-indicator">🔴 Kayıt yapılıyor...</span>
-              <button type="button" className="video-rec-stop" onClick={stopVideoRecording}>
-                <Square size={20} /> Gönder
-              </button>
-            </div>
-          </div>
-        )}
 
         {/* Emoji Picker */}
         <div style={{ position: 'relative' }} ref={emojiPickerRef}>
@@ -340,7 +387,7 @@ const ChatArea = ({ contact, messages, currentUser, onSendMessage, onDeleteMessa
         <button type="button" className="icon-btn" onClick={() => fileInputRef.current?.click()} title="Dosya Gönder">
           <Paperclip size={24} />
         </button>
-        <button type="button" className="icon-btn" onClick={startVideoRecording} title="Kamerayla Video Çek">
+        <button type="button" className="icon-btn" onClick={openCamera} title="Kamera">
           <Camera size={24} />
         </button>
         
@@ -371,6 +418,42 @@ const ChatArea = ({ contact, messages, currentUser, onSendMessage, onDeleteMessa
           </>
         )}
       </form>
+
+      {/* WhatsApp-style Fullscreen Camera */}
+      {isCameraOpen && (
+        <div className="camera-fullscreen">
+          <video ref={videoPreviewRef} autoPlay playsInline muted className="camera-preview" />
+          
+          {/* Top bar */}
+          <div className="camera-top-bar">
+            <button className="camera-btn" onClick={closeCamera}><X size={28} /></button>
+            {isVideoRecording && (
+              <div className="camera-rec-badge">
+                <div className="rec-pulse"></div>
+                <span>{Math.floor(videoTimer / 60).toString().padStart(2, '0')}:{(videoTimer % 60).toString().padStart(2, '0')}</span>
+              </div>
+            )}
+            <button className="camera-btn" onClick={switchCamera}>🔄</button>
+          </div>
+
+          {/* Bottom controls */}
+          <div className="camera-bottom-bar">
+            <span className="camera-hint">{isVideoRecording ? 'Bırakarak gönder' : 'Fotoğraf çek · Basılı tut = Video'}</span>
+            <div className="camera-shutter-wrapper">
+              <button 
+                className={`camera-shutter ${isVideoRecording ? 'recording' : ''}`}
+                onClick={!isVideoRecording ? takePhoto : undefined}
+                onTouchStart={!isVideoRecording ? (e) => { e.preventDefault(); const t = setTimeout(startVideoRec, 400); e.currentTarget._holdTimer = t; } : undefined}
+                onTouchEnd={isVideoRecording ? stopVideoRec : (e) => { if (e.currentTarget._holdTimer) clearTimeout(e.currentTarget._holdTimer); }}
+                onMouseDown={!isVideoRecording ? () => { const t = setTimeout(startVideoRec, 400); document._holdTimer = t; } : undefined}
+                onMouseUp={isVideoRecording ? stopVideoRec : () => { if (document._holdTimer) clearTimeout(document._holdTimer); }}
+              >
+                {isVideoRecording ? <Square size={32} style={{color: '#fff'}} /> : <div className="shutter-inner"></div>}
+              </button>
+            </div>
+          </div>
+        </div>
+      )}
 
       {/* Avatar Lightbox */}
       {avatarPreview && (
