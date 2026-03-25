@@ -226,7 +226,7 @@ const ChatArea = ({ contact, messages, currentUser, onSendMessage, onDeleteMessa
         </div>
       </div>
 
-      <div className="chat-messages">
+      <div className="chat-messages" onTouchStart={() => {}} >
         {messages.map((msg) => {
           const isSent = msg.senderId === currentUser.id;
           return (
@@ -235,6 +235,19 @@ const ChatArea = ({ contact, messages, currentUser, onSendMessage, onDeleteMessa
                 className={`message-bubble ${isSent ? 'sent-bubble' : 'received-bubble'} ${msg.deleted ? 'deleted-bubble' : ''}`}
                 onMouseEnter={() => setActiveMsgOptions(msg.id)}
                 onMouseLeave={() => setActiveMsgOptions(null)}
+                onTouchStart={(e) => {
+                  const timer = setTimeout(() => {
+                    setActiveMsgOptions(msg.id);
+                    if (navigator.vibrate) navigator.vibrate(30);
+                  }, 500);
+                  e.currentTarget._longPressTimer = timer;
+                }}
+                onTouchEnd={(e) => {
+                  if (e.currentTarget._longPressTimer) clearTimeout(e.currentTarget._longPressTimer);
+                }}
+                onTouchMove={(e) => {
+                  if (e.currentTarget._longPressTimer) clearTimeout(e.currentTarget._longPressTimer);
+                }}
               >
                 {msg.isMedia && !msg.deleted ? (
                   msg.mediaType === 'video' ? <video className="message-media" controls src={getMediaUrl(msg.mediaUrl)} />
@@ -243,10 +256,12 @@ const ChatArea = ({ contact, messages, currentUser, onSendMessage, onDeleteMessa
                       className="message-audio" 
                       controls 
                       src={getMediaUrl(msg.mediaUrl)} 
-                      onPlay={() => handleAudioPlay(msg)}
+                      onPlay={() => {
+                        if (!isSent && msg.status !== 'read') onAudioPlayed?.(msg.id, msg.senderId);
+                      }}
                     />
                   )
-                  : msg.mediaType === 'image' ? <img className="message-media" src={getMediaUrl(msg.mediaUrl)} alt="Eklenti" />
+                  : msg.mediaType === 'image' ? <img className="message-media" src={getMediaUrl(msg.mediaUrl)} alt="medya" />
                   : (
                     /* PDF, document, archive, etc. */
                     <a href={getMediaUrl(msg.mediaUrl)} target="_blank" rel="noopener noreferrer" className="file-attachment" download>
@@ -269,17 +284,17 @@ const ChatArea = ({ contact, messages, currentUser, onSendMessage, onDeleteMessa
                   {isSent && !msg.deleted && <span className="read-ticks">{renderStatusTicks(msg.status)}</span>}
                 </span>
 
-                {/* Msg Options Chevron */}
+                {/* Msg Options — long press on mobile, hover on desktop */}
                 {!msg.deleted && activeMsgOptions === msg.id && (
-                  <div className="msg-options-wrapper" onClick={(e) => e.stopPropagation()}>
-                    <button className="msg-chevron-overlay">
-                      <ChevronDown size={18} />
-                    </button>
-                    <div className="msg-dropdown">
-                       {isSent && <button onClick={() => onDeleteMessage(msg.id)}>Herkesten Sil</button>}
-                       <button onClick={() => onDeleteForMe(msg.id)}>Benden Sil</button>
+                  <>
+                    <div className="msg-options-backdrop" onClick={() => setActiveMsgOptions(null)} onTouchEnd={() => setActiveMsgOptions(null)}></div>
+                    <div className="msg-options-wrapper" onClick={(e) => e.stopPropagation()}>
+                      <div className="msg-dropdown">
+                         {isSent && <button onClick={() => { onDeleteMessage(msg.id); setActiveMsgOptions(null); }}>🗑️ Herkesten Sil</button>}
+                         <button onClick={() => { onDeleteForMe(msg.id); setActiveMsgOptions(null); }}>🚫 Benden Sil</button>
+                      </div>
                     </div>
-                  </div>
+                  </>
                 )}
               </div>
             </div>

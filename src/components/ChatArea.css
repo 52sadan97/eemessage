@@ -337,6 +337,15 @@
   }
 }
 
+.msg-options-backdrop {
+  position: fixed;
+  top: 0;
+  left: 0;
+  right: 0;
+  bottom: 0;
+  z-index: 99;
+}
+
 .msg-options-wrapper {
   position: absolute;
   top: 4px;
@@ -344,37 +353,18 @@
   z-index: 100;
 }
 
-.msg-chevron-overlay {
-  background: var(--bg-panel);
-  border: none;
-  border-radius: 50%;
-  padding: 2px;
-  cursor: pointer;
-  color: var(--text-secondary);
-  box-shadow: 0 1px 3px rgba(0,0,0,0.1);
-  display: flex;
-}
-
-.msg-chevron-overlay:hover {
-  color: var(--text-primary);
-}
-
 .msg-dropdown {
   position: absolute;
-  top: 100%;
+  top: 0;
   right: 0;
   background: var(--bg-panel);
   border: 1px solid var(--border-color);
-  box-shadow: 0 4px 10px rgba(0,0,0,0.2);
-  border-radius: 6px;
-  min-width: 140px;
-  display: none;
+  box-shadow: 0 4px 16px rgba(0,0,0,0.25);
+  border-radius: 10px;
+  min-width: 170px;
   overflow: hidden;
   z-index: 1000;
-}
-
-.msg-options-wrapper:hover .msg-dropdown {
-  display: block;
+  animation: dropIn 0.15s ease-out;
 }
 
 .msg-dropdown button {
@@ -383,12 +373,20 @@
   border: none;
   color: var(--text-primary);
   text-align: left;
-  padding: 10px 14px;
+  padding: 12px 16px;
   cursor: pointer;
-  font-size: 13px;
+  font-size: 14px;
+  font-weight: 500;
+  display: flex;
+  align-items: center;
+  gap: 8px;
 }
 
 .msg-dropdown button:hover {
+  background: var(--hover-bg);
+}
+
+.msg-dropdown button:active {
   background: var(--hover-bg);
 }
 
