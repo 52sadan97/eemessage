@@ -1,0 +1,16 @@
+{
+  "appId": "com.eemessage.app",
+  "appName": "EEMessage",
+  "webDir": "dist",
+  "server": {
+    "url": "https://eemessage.sdnnet.com.tr",
+    "cleartext": true
+  },
+  "plugins": {
+    "LocalNotifications": {
+      "smallIcon": "ic_stat_icon",
+      "iconColor": "#00a884",
+      "sound": "notification.wav"
+    }
+  }
+}
