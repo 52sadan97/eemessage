@@ -1,4 +1,4 @@
-import { useState, useEffect, useRef, useCallback } from 'react';
+import { useState, useEffect, useRef, useCallback, useMemo } from 'react';
 import { io } from 'socket.io-client';
 import { App as CapApp } from '@capacitor/app';
 import { API_URL } from './config';
@@ -14,8 +14,10 @@ import './App.css';
 
 const socket = io(API_URL, {
   autoConnect: false,
-  transports: ['websocket'], // APK'da Polling sorun çıkarabilir, WebSocket'e zorluyoruz
-  auth: { token: localStorage.getItem('eemessage_token') }
+  transports: ['websocket'],
+  reconnection: true,
+  reconnectionAttempts: 5,
+  reconnectionDelay: 1000,
 });
 export { socket };
 
@@ -58,22 +60,38 @@ function App() {
 
   // Socket and App Listeners (Run when currentUser is available)
   useEffect(() => {
-    if (!currentUser) return;
+    if (!currentUser) {
+      // User logged out — clean up socket and state
+      if (socket.connected) socket.disconnect();
+      return;
+    }
+
+    // Update auth token before connecting
+    socket.auth = { token: localStorage.getItem('eemessage_token') };
 
     if (!socket.connected) {
       socket.connect();
+    }
+
+    const onConnect = () => {
+      socket.emit('register_user', currentUser);
+    };
+
+    // If already connected, register immediately
+    if (socket.connected) {
       socket.emit('register_user', currentUser);
     }
 
     const handleUsersUpdate = (activeUsers) => {
-      console.log('Contacts updated:', activeUsers.length);
       setContacts(activeUsers.filter(u => u.id !== currentUser.id));
     };
 
     const handleReceiveMsg = (msg) => {
       setMessagesMap(prev => {
         const newMap = { ...prev };
-        const contactId = msg.senderId.toString() === currentUser.id.toString() ? msg.receiverId.toString() : msg.senderId.toString();
+        const contactId = msg.senderId.toString() === currentUser.id.toString()
+          ? msg.receiverId.toString()
+          : msg.senderId.toString();
         if (!newMap[contactId]) newMap[contactId] = [];
         if (!newMap[contactId].find(m => m.id === msg.id)) {
           newMap[contactId] = [...newMap[contactId], msg];
@@ -96,22 +114,112 @@ function App() {
     const handleChatHistory = (history) => {
       const newMap = {};
       history.forEach(msg => {
-        const contactId = msg.senderId.toString() === currentUser.id.toString() ? msg.receiverId.toString() : msg.senderId.toString();
+        const contactId = msg.senderId.toString() === currentUser.id.toString()
+          ? msg.receiverId.toString()
+          : msg.senderId.toString();
         if (!newMap[contactId]) newMap[contactId] = [];
         newMap[contactId].push(msg);
       });
       setMessagesMap(newMap);
     };
 
+    // Bulk read receipts — update status for all messages in a chat
+    const handleMessagesReadBulk = ({ chatId, messageIds }) => {
+      setMessagesMap(prev => {
+        const chatKey = chatId.toString();
+        if (!prev[chatKey]) return prev;
+        return {
+          ...prev,
+          [chatKey]: prev[chatKey].map(m =>
+            messageIds.includes(m.id) ? { ...m, status: 'read' } : m
+          )
+        };
+      });
+    };
+
+    // Single message status change (delivered, read...)
+    const handleStatusChanged = ({ messageId, status }) => {
+      setMessagesMap(prev => {
+        const updated = { ...prev };
+        for (const key of Object.keys(updated)) {
+          const idx = updated[key].findIndex(m => m.id === messageId);
+          if (idx !== -1) {
+            updated[key] = [...updated[key]];
+            updated[key][idx] = { ...updated[key][idx], status };
+            break;
+          }
+        }
+        return updated;
+      });
+    };
+
+    // Delete for everyone
+    const handleMessageDeleted = ({ id, deleted, text }) => {
+      setMessagesMap(prev => {
+        const updated = { ...prev };
+        for (const key of Object.keys(updated)) {
+          const idx = updated[key].findIndex(m => m.id === id);
+          if (idx !== -1) {
+            updated[key] = [...updated[key]];
+            updated[key][idx] = { ...updated[key][idx], deleted: true, text };
+            break;
+          }
+        }
+        return updated;
+      });
+    };
+
+    // Delete for me
+    const handleDeletedForMe = ({ messageId, userId }) => {
+      setMessagesMap(prev => {
+        const updated = { ...prev };
+        for (const key of Object.keys(updated)) {
+          const idx = updated[key].findIndex(m => m.id === messageId);
+          if (idx !== -1) {
+            updated[key] = [...updated[key]];
+            const existing = updated[key][idx];
+            const deletedBy = Array.isArray(existing.deletedBy) ? existing.deletedBy : [];
+            if (!deletedBy.includes(userId)) {
+              updated[key][idx] = { ...existing, deletedBy: [...deletedBy, userId] };
+            }
+            break;
+          }
+        }
+        return updated;
+      });
+    };
+
+    // Clear chat (soft-delete all messages in a chat)
+    const handleChatCleared = (contactId) => {
+      setMessagesMap(prev => {
+        const key = contactId.toString();
+        if (!prev[key]) return prev;
+        return {
+          ...prev,
+          [key]: prev[key].map(m => ({
+            ...m,
+            deletedBy: Array.isArray(m.deletedBy)
+              ? (m.deletedBy.includes(currentUser.id.toString()) ? m.deletedBy : [...m.deletedBy, currentUser.id.toString()])
+              : [currentUser.id.toString()]
+          }))
+        };
+      });
+    };
+
+    socket.on('connect', onConnect);
     socket.on('users_updated', handleUsersUpdate);
     socket.on('receive_message', handleReceiveMsg);
     socket.on('chat_history', handleChatHistory);
+    socket.on('messages_read_bulk', handleMessagesReadBulk);
+    socket.on('message_status_changed', handleStatusChanged);
+    socket.on('message_deleted', handleMessageDeleted);
+    socket.on('message_deleted_for_me', handleDeletedForMe);
+    socket.on('chat_cleared', handleChatCleared);
 
     // Capacitor App Event Listeners
     const stateListener = CapApp.addListener('appStateChange', ({ isActive }) => {
       if (isActive && !socket.connected) {
         socket.connect();
-        socket.emit('register_user', currentUser);
       }
     });
 
@@ -122,9 +230,15 @@ function App() {
     });
 
     return () => {
+      socket.off('connect', onConnect);
       socket.off('users_updated', handleUsersUpdate);
       socket.off('receive_message', handleReceiveMsg);
       socket.off('chat_history', handleChatHistory);
+      socket.off('messages_read_bulk', handleMessagesReadBulk);
+      socket.off('message_status_changed', handleStatusChanged);
+      socket.off('message_deleted', handleMessageDeleted);
+      socket.off('message_deleted_for_me', handleDeletedForMe);
+      socket.off('chat_cleared', handleChatCleared);
       stateListener.remove();
       backListener.remove();
     };
@@ -148,18 +262,30 @@ function App() {
     setCurrentUser(prev => ({ ...prev, name, avatar }));
   }, [currentUser]);
 
-  const contactsWithMetadata = contacts.map(contact => {
-    const contactMessages = messagesMap[contact.id] || [];
+  const contactsWithMetadata = useMemo(() => contacts.map(contact => {
+    const allContactMessages = messagesMap[contact.id] || [];
+    // Filter out messages deleted for current user
+    const contactMessages = allContactMessages.filter(m => {
+      const deletedBy = Array.isArray(m.deletedBy) ? m.deletedBy : [];
+      return !deletedBy.includes(currentUser?.id?.toString());
+    });
     const lastMsg = contactMessages[contactMessages.length - 1];
     const unreadCount = contactMessages.filter(m => m.senderId.toString() === contact.id.toString() && m.status !== 'read').length;
     return {
       ...contact,
-      lastMessage: lastMsg ? (lastMsg.isMedia ? (lastMsg.mediaType === 'image' ? '📷 Fotoğraf' : (lastMsg.mediaType === 'video' ? '🎥 Video' : '📁 Dosya')) : lastMsg.text) : '',
+      lastMessage: lastMsg
+        ? (lastMsg.isMedia
+          ? (lastMsg.mediaType === 'image' ? '📷 Fotoğraf'
+            : lastMsg.mediaType === 'video' ? '🎥 Video'
+            : lastMsg.mediaType === 'audio' ? '🎤 Ses'
+            : '📁 Dosya')
+          : lastMsg.text)
+        : '',
       time: lastMsg ? lastMsg.timestamp : '',
       unread: unreadCount,
       lastMessageAt: lastMsg ? lastMsg.createdAt : 0
     };
-  }).sort((a, b) => b.lastMessageAt - a.lastMessageAt);
+  }).sort((a, b) => b.lastMessageAt - a.lastMessageAt), [contacts, messagesMap, currentUser?.id]);
 
   if (isInitializing) return <div className="loading-screen">EEMessage Başlatılıyor...</div>;
   if (!currentUser) return <Auth onLogin={setCurrentUser} />;
@@ -177,8 +303,11 @@ function App() {
           theme={theme}
           onLogout={() => {
             localStorage.removeItem('eemessage_token');
-            setCurrentUser(null);
             socket.disconnect();
+            setContacts([]);
+            setMessagesMap({});
+            setSelectedContactId(null);
+            setCurrentUser(null);
           }}
           onUpdateProfile={handleUpdateProfile}
           messagesMap={messagesMap}
@@ -189,7 +318,12 @@ function App() {
         <ChatArea
           currentUser={currentUser}
           contact={contacts.find(c => c.id.toString() === selectedContactId?.toString())}
-          messages={selectedContactId ? (messagesMap[selectedContactId] || []) : []}
+          messages={selectedContactId
+            ? (messagesMap[selectedContactId] || []).filter(m => {
+                const deletedBy = Array.isArray(m.deletedBy) ? m.deletedBy : [];
+                return !deletedBy.includes(currentUser.id.toString());
+              })
+            : []}
           socket={socket}
           onSendMessage={handleSendMessage}
           onDeleteMessage={(id) => socket.emit('delete_message', id)}
