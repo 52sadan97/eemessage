@@ -130,34 +130,78 @@ function App() {
     };
   }, [currentUser]);
 
+  const handleSendMessage = useCallback((msgData) => {
+    if (!currentUser) return;
+    const newMsg = {
+      id: Date.now().toString() + Math.random().toString(36).substr(2, 5),
+      senderId: currentUser.id.toString(),
+      timestamp: new Date().toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' }),
+      ...msgData,
+      status: 'sending'
+    };
+    socket.emit('send_message', newMsg);
+  }, [currentUser]);
+
+  const handleUpdateProfile = useCallback((name, avatar) => {
+    if (!currentUser) return;
+    socket.emit('update_profile', { id: currentUser.id, name, avatar });
+    setCurrentUser(prev => ({ ...prev, name, avatar }));
+  }, [currentUser]);
+
+  const contactsWithMetadata = contacts.map(contact => {
+    const contactMessages = messagesMap[contact.id] || [];
+    const lastMsg = contactMessages[contactMessages.length - 1];
+    const unreadCount = contactMessages.filter(m => m.senderId.toString() === contact.id.toString() && m.status !== 'read').length;
+    return {
+      ...contact,
+      lastMessage: lastMsg ? (lastMsg.isMedia ? (lastMsg.mediaType === 'image' ? '📷 Fotoğraf' : (lastMsg.mediaType === 'video' ? '🎥 Video' : '📁 Dosya')) : lastMsg.text) : '',
+      time: lastMsg ? lastMsg.timestamp : '',
+      unread: unreadCount,
+      lastMessageAt: lastMsg ? lastMsg.createdAt : 0
+    };
+  }).sort((a, b) => b.lastMessageAt - a.lastMessageAt);
+
   if (isInitializing) return <div className="loading-screen">EEMessage Başlatılıyor...</div>;
   if (!currentUser) return <Auth onLogin={setCurrentUser} />;
   if (window.location.hash === '#/admin') return <AdminPanel />;
 
   return (
-    <div className="app-container">
-      <Sidebar
-        currentUser={currentUser}
-        contacts={contacts}
-        onSelectContact={setSelectedContactId}
-        selectedContactId={selectedContactId}
-        toggleTheme={toggleTheme}
-        theme={theme}
-        onLogout={() => {
-          localStorage.removeItem('eemessage_token');
-          setCurrentUser(null);
-          socket.disconnect();
-        }}
-        messagesMap={messagesMap}
-      />
+    <div className={`app-container ${selectedContactId ? 'chat-active' : 'sidebar-active'}`}>
+      <div className="sidebar-wrapper">
+        <Sidebar
+          currentUser={currentUser}
+          contacts={contactsWithMetadata}
+          onSelectContact={setSelectedContactId}
+          selectedContactId={selectedContactId}
+          toggleTheme={toggleTheme}
+          theme={theme}
+          onLogout={() => {
+            localStorage.removeItem('eemessage_token');
+            setCurrentUser(null);
+            socket.disconnect();
+          }}
+          onUpdateProfile={handleUpdateProfile}
+          messagesMap={messagesMap}
+        />
+      </div>
 
-      <ChatArea
-        currentUser={currentUser}
-        contact={contacts.find(c => c.id.toString() === selectedContactId?.toString())}
-        messages={selectedContactId ? (messagesMap[selectedContactId] || []) : []}
-        socket={socket}
-        onStartCall={(type) => callManagerRef.current?.startCall(selectedContactId, type)}
-      />
+      <div className="chatarea-wrapper">
+        <ChatArea
+          currentUser={currentUser}
+          contact={contacts.find(c => c.id.toString() === selectedContactId?.toString())}
+          messages={selectedContactId ? (messagesMap[selectedContactId] || []) : []}
+          socket={socket}
+          onSendMessage={handleSendMessage}
+          onDeleteMessage={(id) => socket.emit('delete_message', id)}
+          onDeleteForMe={(id) => socket.emit('delete_for_me', { messageId: id, userId: currentUser.id })}
+          onClearChat={(id) => { if(window.confirm('Bu sohbeti temizlemek istediğinize emin misiniz?')) socket.emit('clear_chat', id) }}
+          onBack={() => setSelectedContactId(null)}
+          onStartCall={(type) => callManagerRef.current?.startCall(selectedContactId, type)}
+          onAudioPlayed={(messageId, senderId) => {
+            socket.emit('update_message_status', { messageId, status: 'read', senderId });
+          }}
+        />
+      </div>
 
       <CallManager
         ref={callManagerRef}
