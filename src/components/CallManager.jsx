@@ -6,8 +6,11 @@ const ICE_SERVERS = [
   { urls: 'stun:stun.l.google.com:19302' },
   { urls: 'stun:stun1.l.google.com:19302' },
   { urls: 'stun:stun2.l.google.com:19302' },
+  { urls: 'stun:stun3.l.google.com:19302' },
+  { urls: 'stun:stun4.l.google.com:19302' },
   { urls: 'turn:openrelay.metered.ca:80', username: 'openrelayproject', credential: 'openrelayproject' },
   { urls: 'turn:openrelay.metered.ca:443', username: 'openrelayproject', credential: 'openrelayproject' },
+  { urls: 'turn:openrelay.metered.ca:443?transport=tcp', username: 'openrelayproject', credential: 'openrelayproject' },
 ];
 
 const CallManager = forwardRef(({ socket, currentUser, contacts }, ref) => {
@@ -96,29 +99,32 @@ const CallManager = forwardRef(({ socket, currentUser, contacts }, ref) => {
 
   // Helper: get media stream with fallback
   const getMediaStream = async (type) => {
-    const isSecure = window.location.protocol === 'https:' || window.location.hostname === 'localhost';
+    const isSecure = window.location.protocol === 'https:' || 
+                     window.location.protocol === 'capacitor:' ||
+                     window.location.hostname === 'localhost' ||
+                     window.location.hostname.includes('sdnnet.com.tr') ||
+                     window.location.origin.includes('localhost');
     
     if (type === 'video') {
       try {
-        return await navigator.mediaDevices.getUserMedia({ video: true, audio: true });
+        console.log('Requesting Video+Audio...');
+        const stream = await navigator.mediaDevices.getUserMedia({ video: true, audio: true });
+        console.log('Stream obtained:', stream.id);
+        return stream;
       } catch (err) {
-        console.warn('Video+Audio failed:', err.name);
-        if (err.name === 'NotAllowedError' && !isSecure) {
-          alert('Kamera/mikrofon izni için HTTPS gereklidir. Sadece sesli arama deneniyor...');
-        }
+        console.warn('Video+Audio failing, trying audio only...', err.name);
         try {
           const audioStream = await navigator.mediaDevices.getUserMedia({ audio: true, video: false });
           setCallType('audio');
           return audioStream;
         } catch (err2) {
-          console.error('Audio fallback also failed:', err2.name);
-          if (!isSecure) {
-            alert('HTTPS olmadan kamera ve mikrofon erişimi sağlanamıyor. Lütfen HTTPS kullanın.');
-          }
+          console.error('Audio also failed:', err2.name);
+          alert('Kamera veya mikrofon izni alınamadı (Hata: ' + err2.name + ')');
           throw err2;
         }
       }
     } else {
+      console.log('Requesting Audio only...');
       return await navigator.mediaDevices.getUserMedia({ audio: true, video: false });
     }
   };
@@ -132,21 +138,22 @@ const CallManager = forwardRef(({ socket, currentUser, contacts }, ref) => {
     setCallState('calling');
     signalSentRef.current = false;
 
-    // 30-second timeout for unanswered calls
+    // 45-second timeout
     callTimeoutRef.current = setTimeout(() => {
-      console.warn('Arama cevaplanmadı (30s timeout)');
-      sendMissedCallMessage(contactId, type);
-      socket.emit('callEnded', { to: partner.id });
-      cleanup();
-    }, 30000);
+      if (callStateRef.current === 'calling') {
+        console.warn('Call unanswered timeout');
+        sendMissedCallMessage(contactId, type);
+        socket.emit('callEnded', { to: partner.id });
+        cleanup();
+      }
+    }, 45000);
 
     try {
+      console.log('Starting call process for', contactId);
       const stream = await getMediaStream(type);
       localStreamRef.current = stream;
 
-      setTimeout(() => {
-        if (localVideoRef.current) localVideoRef.current.srcObject = stream;
-      }, 100);
+      if (localVideoRef.current) localVideoRef.current.srcObject = stream;
 
       const actualType = stream.getVideoTracks().length > 0 ? 'video' : 'audio';
 
@@ -160,7 +167,7 @@ const CallManager = forwardRef(({ socket, currentUser, contacts }, ref) => {
       peer.on('signal', (data) => {
         if (!signalSentRef.current) {
           signalSentRef.current = true;
-          console.log('Sending call signal to', contactId);
+          console.log('SENDING SIGNAL TO SERVER...', contactId);
           socket.emit('callUser', {
             userToCall: contactId,
             signalData: data,
@@ -172,24 +179,20 @@ const CallManager = forwardRef(({ socket, currentUser, contacts }, ref) => {
       });
 
       peer.on('stream', (remoteStream) => {
-        console.log('Got remote stream');
+        console.log('Got remote stream SUCCESS');
         if (remoteVideoRef.current) remoteVideoRef.current.srcObject = remoteStream;
       });
 
       peer.on('error', (e) => {
-        console.error('Peer error:', e.message);
+        console.error('Peer error:', e);
         if (callStateRef.current !== 'idle') cleanup();
       });
 
-      peer.on('close', () => {
-        if (callStateRef.current === 'active') cleanup();
-      });
+      peer.on('close', () => cleanup());
 
       peerRef.current = peer;
     } catch (err) {
-      console.error('getUserMedia hatası:', err.name, err.message);
-      sendMissedCallMessage(contactId, type);
-      socket.emit('callEnded', { to: partner.id });
+      console.error('General call start failure:', err);
       cleanup();
     }
   }, [contacts, currentUser, socket, cleanup, sendMissedCallMessage]);
@@ -200,6 +203,8 @@ const CallManager = forwardRef(({ socket, currentUser, contacts }, ref) => {
       const stream = await getMediaStream(callType);
       localStreamRef.current = stream;
 
+      if (localVideoRef.current) localVideoRef.current.srcObject = stream;
+
       const peer = new SimplePeer({
         initiator: false,
         trickle: false,
@@ -208,35 +213,33 @@ const CallManager = forwardRef(({ socket, currentUser, contacts }, ref) => {
       });
 
       peer.on('signal', (data) => {
-        console.log('Sending answer signal');
-        socket.emit('answerCall', { to: callPartner.id, signal: data });
+        console.log('Answering signal sent back to caller');
+        socket.emit('answerCall', { 
+          signal: data, 
+          to: callPartner.id 
+        });
       });
 
       peer.on('stream', (remoteStream) => {
-        console.log('Got remote stream (answer)');
         if (remoteVideoRef.current) remoteVideoRef.current.srcObject = remoteStream;
       });
 
-      peer.on('error', (e) => { console.error('Peer error:', e.message); cleanup(); });
-      peer.on('close', () => {
-        if (callStateRef.current === 'active') cleanup();
+      peer.on('error', (e) => {
+        console.error('Answer peer error:', e);
+        cleanup();
       });
 
-      // Signal the incoming offer AFTER setting up listeners
+      peer.on('close', () => cleanup());
+
       peer.signal(incomingSignalRef.current);
       peerRef.current = peer;
       setCallState('active');
       timerRef.current = setInterval(() => setCallDuration(prev => prev + 1), 1000);
-
-      setTimeout(() => {
-        if (localVideoRef.current) localVideoRef.current.srcObject = stream;
-      }, 100);
     } catch (err) {
-      console.error('getUserMedia hatası (answer):', err.name, err.message);
-      if (callPartner) socket.emit('callEnded', { to: callPartner.id });
+      console.error('Answer call failure:', err);
       cleanup();
     }
-  }, [callType, callPartner, socket, cleanup]);
+  }, [callPartner, callType, socket, cleanup]);
 
   const rejectCall = useCallback(() => {
     if (callPartner) socket.emit('callEnded', { to: callPartner.id });
@@ -268,7 +271,6 @@ const CallManager = forwardRef(({ socket, currentUser, contacts }, ref) => {
     return `${m}:${s}`;
   };
 
-  // Expose startCall to parent via ref
   useImperativeHandle(ref, () => ({ startCall }));
 
   // Incoming Call — WhatsApp Fullscreen
@@ -315,14 +317,12 @@ const CallManager = forwardRef(({ socket, currentUser, contacts }, ref) => {
   if (callState === 'calling' || callState === 'active') {
     return (
       <div className="wa-call-screen active">
-        {/* Video background or gradient */}
         {callType === 'video' && callState === 'active' ? (
           <video ref={remoteVideoRef} className="wa-remote-video" autoPlay playsInline />
         ) : (
           <div className="wa-call-bg"></div>
         )}
 
-        {/* Top info */}
         <div className="wa-call-topbar">
           <div className="wa-topbar-info">
             <h3>{callPartner?.name || ''}</h3>
@@ -333,7 +333,6 @@ const CallManager = forwardRef(({ socket, currentUser, contacts }, ref) => {
           </div>
         </div>
 
-        {/* Center — avatar for audio calls or calling state */}
         {(callType === 'audio' || callState === 'calling') && (
           <div className="wa-call-center">
             <div className={`wa-avatar-ring ${callState === 'calling' ? 'calling' : ''}`}>
@@ -347,14 +346,12 @@ const CallManager = forwardRef(({ socket, currentUser, contacts }, ref) => {
           </div>
         )}
 
-        {/* Local video PiP */}
         {callType === 'video' && callState === 'active' && (
           <div className="wa-local-pip">
             <video ref={localVideoRef} autoPlay playsInline muted />
           </div>
         )}
 
-        {/* Bottom controls */}
         <div className="wa-call-controls">
           {callState === 'active' && callType === 'video' && (
             <div className="wa-ctrl-item">

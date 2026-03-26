@@ -1,5 +1,6 @@
 import { useState, useEffect, useRef, useCallback } from 'react';
 import { io } from 'socket.io-client';
+import { App as CapApp } from '@capacitor/app';
 import { API_URL } from './config';
 import { ToastContainer, toast } from 'react-toastify';
 import 'react-toastify/dist/ReactToastify.css';
@@ -67,7 +68,20 @@ function App() {
     } else {
       setIsInitializing(false);
     }
-  }, []);
+
+    // Capacitor: Uygulama öne geldiğinde (resume) socket'i kontrol et
+    const stateListener = CapApp.addListener('appStateChange', ({ isActive }) => {
+      if (isActive && currentUser && !socket.connected) {
+        console.log('App is active, reconnecting socket...');
+        socket.connect();
+        socket.emit('register_user', currentUser);
+      }
+    });
+
+    return () => {
+      stateListener.remove();
+    };
+  }, [currentUser]);
 
   useEffect(() => {
     if (currentUser) {
