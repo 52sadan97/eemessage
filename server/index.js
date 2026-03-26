@@ -307,21 +307,39 @@ const activeSockets = new Map();
 
 io.on('connection', (socket) => {
   socket.on('register_user', (userData) => {
-    updateUserLastSeen.run(Date.now(), userData.id);
+    try {
+      if (userData && userData.id) {
+        updateUserLastSeen.run(Date.now(), userData.id.toString());
+      }
+    } catch(err) {
+      console.error('Update lastSeen error:', err);
+    }
+
     activeSockets.set(socket.id, { ...userData, socketId: socket.id, online: true });
     
-    const allDbUsers = getAllUsers.all();
-    const activeUserIds = Array.from(activeSockets.values()).map(u => u.id.toString());
-    
-    io.emit('users_updated', allDbUsers.map(u => ({
-      id: u.id.toString(), name: u.name, avatar: u.avatar, online: activeUserIds.includes(u.id.toString())
-    })));
+    // Broadcast updated list
+    try {
+      const allDbUsers = getAllUsers.all();
+      const activeUserIds = Array.from(activeSockets.values()).map(u => u.id.toString());
+      
+      io.emit('users_updated', allDbUsers.map(u => ({
+        id: u.id.toString(), 
+        name: u.name, 
+        avatar: u.avatar, 
+        online: activeUserIds.includes(u.id.toString())
+      })));
 
-    const history = getMessages.all().map(msg => ({
-       ...msg, isMedia: msg.isMedia === 1, deleted: msg.deleted === 1,
-       deletedBy: JSON.parse(msg.deletedBy || '[]')
-    }));
-    socket.emit('chat_history', history);
+      const historyRows = getMessages.all();
+      const history = historyRows.map(msg => ({
+         ...msg, 
+         isMedia: msg.isMedia === 1, 
+         deleted: msg.deleted === 1,
+         deletedBy: JSON.parse(msg.deletedBy || '[]')
+      }));
+      socket.emit('chat_history', history);
+    } catch(err) {
+      console.error('Fetch users/history error:', err);
+    }
   });
 
   socket.on('send_message', (msg) => {
