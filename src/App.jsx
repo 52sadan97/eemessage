@@ -253,17 +253,11 @@ function App() {
     socket.on('message_deleted_for_me', handleDeletedForMe);
     socket.on('chat_cleared', handleChatCleared);
 
-    // Capacitor App Event Listeners
+    // Capacitor App State Listener
     const stateListener = CapApp.addListener('appStateChange', ({ isActive }) => {
       if (isActive && !socket.connected) {
         socket.connect();
       }
-    });
-
-    const backListener = CapApp.addListener('backButton', () => {
-      if (window.location.hash === '#/admin') { window.location.hash = ''; return; }
-      if (selectedContactIdRef.current) setSelectedContactId(null);
-      else CapApp.exitApp();
     });
 
     return () => {
@@ -277,9 +271,24 @@ function App() {
       socket.off('message_deleted_for_me', handleDeletedForMe);
       socket.off('chat_cleared', handleChatCleared);
       stateListener.remove();
-      backListener.remove();
     };
   }, [currentUser, showNotification]);
+
+  // ===== BACK BUTTON — always active, independent of socket/user =====
+  useEffect(() => {
+    const backListener = CapApp.addListener('backButton', () => {
+      if (window.location.hash === '#/admin') {
+        window.location.hash = '';
+        return;
+      }
+      if (selectedContactIdRef.current) {
+        setSelectedContactId(null);
+      } else {
+        CapApp.exitApp();
+      }
+    });
+    return () => { backListener.remove(); };
+  }, []);
 
   const handleSendMessage = useCallback((msgData) => {
     if (!currentUser) return;

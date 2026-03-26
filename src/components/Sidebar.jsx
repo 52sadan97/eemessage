@@ -1,5 +1,5 @@
-import { useState } from 'react';
-import { MessageSquare, MoreVertical, Search, Moon, Sun } from 'lucide-react';
+import { useState, useMemo } from 'react';
+import { MessageSquare, MoreVertical, Search, Moon, Sun, X } from 'lucide-react';
 import { getMediaUrl } from '../config';
 import NewChatModal from './NewChatModal';
 import ProfileModal from './ProfileModal';
@@ -9,14 +9,25 @@ const Sidebar = ({ contacts, selectedContactId, onSelectContact, theme, toggleTh
   const [isModalOpen, setIsModalOpen] = useState(false);
   const [isProfileModalOpen, setIsProfileModalOpen] = useState(false);
   const [isDropdownOpen, setIsDropdownOpen] = useState(false);
+  const [searchQuery, setSearchQuery] = useState('');
+
+  // Filter contacts by search query
+  const filteredContacts = useMemo(() => {
+    if (!searchQuery.trim()) return contacts;
+    const q = searchQuery.toLowerCase();
+    return contacts.filter(c =>
+      c.name?.toLowerCase().includes(q) ||
+      c.lastMessage?.toLowerCase().includes(q)
+    );
+  }, [contacts, searchQuery]);
 
   return (
     <div className="sidebar">
       <div className="sidebar-header">
-        <img 
-          src={getMediaUrl(currentUser.avatar)} 
-          alt="User" 
-          className="avatar" 
+        <img
+          src={getMediaUrl(currentUser.avatar)}
+          alt="User"
+          className="avatar"
           onClick={() => setIsProfileModalOpen(true)}
           style={{ cursor: 'pointer' }}
           title="Profili Düzenle"
@@ -38,17 +49,31 @@ const Sidebar = ({ contacts, selectedContactId, onSelectContact, theme, toggleTh
           </div>
         </div>
       </div>
-      
+
       <div className="search-container">
         <div className="search-box">
           <Search size={18} className="search-icon" />
-          <input type="text" placeholder="Aratın veya yeni sohbet başlatın" />
+          <input
+            type="text"
+            placeholder="Aratın veya yeni sohbet başlatın"
+            value={searchQuery}
+            onChange={e => setSearchQuery(e.target.value)}
+          />
+          {searchQuery && (
+            <button className="search-clear" onClick={() => setSearchQuery('')}>
+              <X size={16} />
+            </button>
+          )}
         </div>
       </div>
 
       <div className="contacts-list">
-        {contacts.map(contact => {
-          // Format lastSeen
+        {filteredContacts.length === 0 && searchQuery ? (
+          <div className="no-results">
+            <p>"{searchQuery}" için sonuç bulunamadı</p>
+          </div>
+        ) : null}
+        {filteredContacts.map(contact => {
           let statusText = contact.online ? 'Çevrimiçi' : '';
           if (!contact.online && contact.lastSeen) {
             const diff = Date.now() - contact.lastSeen;
@@ -88,13 +113,13 @@ const Sidebar = ({ contacts, selectedContactId, onSelectContact, theme, toggleTh
           );
         })}
       </div>
-      <NewChatModal 
-        isOpen={isModalOpen} 
-        onClose={() => setIsModalOpen(false)} 
-        onSelectContact={onSelectContact} 
+      <NewChatModal
+        isOpen={isModalOpen}
+        onClose={() => setIsModalOpen(false)}
+        onSelectContact={onSelectContact}
         contacts={contacts}
       />
-      <ProfileModal 
+      <ProfileModal
         isOpen={isProfileModalOpen}
         onClose={() => setIsProfileModalOpen(false)}
         currentUser={currentUser}
