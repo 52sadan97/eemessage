@@ -9,6 +9,26 @@ const bcrypt = require('bcryptjs');
 const jwt = require('jsonwebtoken');
 const Database = require('better-sqlite3');
 
+// ===== Firebase Admin SDK for Push Notifications =====
+let firebaseAdmin = null;
+try {
+  const admin = require('firebase-admin');
+  const serviceAccountPath = path.join(__dirname, 'firebase-service-account.json');
+  if (fs.existsSync(serviceAccountPath)) {
+    const serviceAccount = require(serviceAccountPath);
+    admin.initializeApp({
+      credential: admin.credential.cert(serviceAccount)
+    });
+    firebaseAdmin = admin;
+    console.log('✅ Firebase Admin SDK initialized');
+  } else {
+    console.warn('⚠️  firebase-service-account.json not found — push notifications disabled');
+    console.warn('   Place your Firebase service account JSON in server/firebase-service-account.json');
+  }
+} catch(err) {
+  console.warn('⚠️  Firebase Admin SDK not available:', err.message);
+}
+
 const app = express();
 app.use(cors());
 app.use(express.json());
@@ -62,6 +82,15 @@ try {
       createdAt INTEGER
     );
   `);
+  // FCM tokens table
+  db.exec(`
+    CREATE TABLE IF NOT EXISTS fcm_tokens (
+      userId TEXT NOT NULL,
+      token TEXT NOT NULL,
+      createdAt INTEGER,
+      PRIMARY KEY (userId, token)
+    );
+  `);
   // Schema migrations
   try { db.exec('ALTER TABLE messages ADD COLUMN status TEXT DEFAULT "sent"'); } catch(e){}
   try { db.exec('ALTER TABLE messages ADD COLUMN deletedBy TEXT DEFAULT "[]"'); } catch(e){}
@@ -72,6 +101,53 @@ try {
   try { db.exec('CREATE INDEX IF NOT EXISTS idx_messages_created ON messages(createdAt)'); } catch(e){}
 } catch(err) {
   console.error('DB Init Error:', err);
+}
+
+// FCM token prepared statements
+const upsertFcmToken = db.prepare('INSERT OR REPLACE INTO fcm_tokens (userId, token, createdAt) VALUES (?, ?, ?)');
+const getFcmTokensForUser = db.prepare('SELECT token FROM fcm_tokens WHERE userId = ?');
+const deleteFcmToken = db.prepare('DELETE FROM fcm_tokens WHERE token = ?');
+
+// ===== Send Push Notification via FCM =====
+async function sendPushNotification(userId, title, body, data = {}) {
+  if (!firebaseAdmin) return;
+  try {
+    const tokens = getFcmTokensForUser.all(userId).map(r => r.token);
+    if (tokens.length === 0) return;
+
+    const message = {
+      notification: { title, body },
+      data: { ...data, click_action: 'FLUTTER_NOTIFICATION_CLICK' },
+      android: {
+        priority: 'high',
+        notification: {
+          channelId: 'eemessage_messages',
+          sound: 'default',
+          priority: 'high',
+        },
+      },
+    };
+
+    const results = await Promise.allSettled(
+      tokens.map(token =>
+        firebaseAdmin.messaging().send({ ...message, token })
+      )
+    );
+
+    // Clean up invalid tokens
+    results.forEach((result, idx) => {
+      if (result.status === 'rejected') {
+        const err = result.reason;
+        if (err?.code === 'messaging/registration-token-not-registered' ||
+            err?.code === 'messaging/invalid-registration-token') {
+          console.log('[FCM] Removing invalid token:', tokens[idx].substring(0, 20));
+          deleteFcmToken.run(tokens[idx]);
+        }
+      }
+    });
+  } catch(err) {
+    console.error('[FCM] Send error:', err.message);
+  }
 }
 
 // Prepared statements
@@ -139,6 +215,20 @@ app.post('/api/messages/mark-read', (req, res) => {
     res.json({ updated: messageIds.length });
   } catch(err) {
     console.error('Mark-read error:', err);
+    res.status(500).json({ error: 'Server error.' });
+  }
+});
+
+// ===== FCM Token Registration =====
+app.post('/api/push/register', (req, res) => {
+  try {
+    const { userId, fcmToken } = req.body;
+    if (!userId || !fcmToken) return res.status(400).json({ error: 'userId and fcmToken are required.' });
+    upsertFcmToken.run(userId.toString(), fcmToken, Date.now());
+    console.log('[FCM] Token registered for user:', userId);
+    res.json({ success: true });
+  } catch(err) {
+    console.error('[FCM] Token register error:', err);
     res.status(500).json({ error: 'Server error.' });
   }
 });
@@ -359,6 +449,17 @@ io.on('connection', (socket) => {
       outMsg.status = 'delivered';
       updateMessageStatus.run('delivered', msg.id.toString());
       io.to(receiverSocket.socketId).emit('receive_message', { ...outMsg, status: 'delivered' });
+    } else {
+      // Receiver is OFFLINE — send push notification via FCM
+      const sender = activeSockets.get(socket.id);
+      const senderName = sender?.name || 'Bilinmeyen';
+      const notifBody = msg.isMedia
+        ? (msg.mediaType === 'image' ? '📷 Fotoğraf' : msg.mediaType === 'video' ? '🎥 Video' : msg.mediaType === 'audio' ? '🎤 Ses mesajı' : '📁 Dosya')
+        : (msg.text || 'Yeni mesaj');
+      sendPushNotification(msg.receiverId.toString(), senderName, notifBody, {
+        senderId: msg.senderId.toString(),
+        type: 'message'
+      });
     }
     // Echo back to sender with final status
     socket.emit('receive_message', outMsg);
@@ -431,6 +532,14 @@ io.on('connection', (socket) => {
     const targetSocket = Array.from(activeSockets.values()).find(u => u.id.toString() === userToCall.toString());
     if (targetSocket) {
       io.to(targetSocket.socketId).emit('incomingCall', { signal: signalData, from, name, callType });
+    } else {
+      // Target is offline — send push notification for missed call
+      const callLabel = callType === 'video' ? '📹 Görüntülü arama' : '📞 Sesli arama';
+      sendPushNotification(userToCall.toString(), name || 'Bilinmeyen', callLabel, {
+        senderId: from.toString(),
+        type: 'call',
+        callType: callType || 'audio'
+      });
     }
   });
 

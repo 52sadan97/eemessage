@@ -11,6 +11,7 @@ import Auth from './components/Auth';
 import CallManager from './components/CallManager';
 import AdminPanel from './components/AdminPanel';
 import PermissionSetup from './components/PermissionSetup';
+import usePushNotifications from './hooks/usePushNotifications';
 import './App.css';
 
 const socket = io(API_URL, {
@@ -32,6 +33,9 @@ function App() {
   const [messagesMap, setMessagesMap] = useState({});
   const selectedContactIdRef = useRef(null);
   const callManagerRef = useRef(null);
+
+  // Firebase push notifications (native Android only)
+  usePushNotifications(currentUser);
 
   useEffect(() => {
     selectedContactIdRef.current = selectedContactId;

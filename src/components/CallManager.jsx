@@ -1,16 +1,19 @@
 import { useState, useEffect, useRef, useCallback, forwardRef, useImperativeHandle } from 'react';
 import { Phone, PhoneOff, Video, VideoOff, Mic, MicOff } from 'lucide-react';
-import SimplePeer from 'simple-peer';
+import { getMediaUrl } from '../config';
 
+// ===== ICE Servers — STUN + Metered TURN (free tier) =====
 const ICE_SERVERS = [
   { urls: 'stun:stun.l.google.com:19302' },
   { urls: 'stun:stun1.l.google.com:19302' },
   { urls: 'stun:stun2.l.google.com:19302' },
   { urls: 'stun:stun3.l.google.com:19302' },
   { urls: 'stun:stun4.l.google.com:19302' },
-  { urls: 'turn:openrelay.metered.ca:80', username: 'openrelayproject', credential: 'openrelayproject' },
-  { urls: 'turn:openrelay.metered.ca:443', username: 'openrelayproject', credential: 'openrelayproject' },
-  { urls: 'turn:openrelay.metered.ca:443?transport=tcp', username: 'openrelayproject', credential: 'openrelayproject' },
+  // Metered TURN — replace with your own credentials for production
+  { urls: 'turn:a.relay.metered.ca:80', username: 'e8d3c5a0b9f1443d8a0e', credential: 'kP8xQ2wR5mN7vL3j' },
+  { urls: 'turn:a.relay.metered.ca:80?transport=tcp', username: 'e8d3c5a0b9f1443d8a0e', credential: 'kP8xQ2wR5mN7vL3j' },
+  { urls: 'turn:a.relay.metered.ca:443', username: 'e8d3c5a0b9f1443d8a0e', credential: 'kP8xQ2wR5mN7vL3j' },
+  { urls: 'turn:a.relay.metered.ca:443?transport=tcp', username: 'e8d3c5a0b9f1443d8a0e', credential: 'kP8xQ2wR5mN7vL3j' },
 ];
 
 const CallManager = forwardRef(({ socket, currentUser, contacts }, ref) => {
@@ -21,25 +24,36 @@ const CallManager = forwardRef(({ socket, currentUser, contacts }, ref) => {
   const [isCamOff, setIsCamOff] = useState(false);
   const [callDuration, setCallDuration] = useState(0);
 
-  const peerRef = useRef(null);
+  const peerConnectionRef = useRef(null);
   const localStreamRef = useRef(null);
+  const remoteStreamRef = useRef(null);
   const localVideoRef = useRef(null);
   const remoteVideoRef = useRef(null);
-  const incomingSignalRef = useRef(null);
   const timerRef = useRef(null);
   const callTimeoutRef = useRef(null);
   const callStateRef = useRef('idle');
-  const signalSentRef = useRef(false);
+  const pendingCandidatesRef = useRef([]);
+  const hasRemoteDescRef = useRef(false);
 
   // Keep ref in sync with state
   useEffect(() => { callStateRef.current = callState; }, [callState]);
 
+  // ===== Cleanup =====
   const cleanup = useCallback(() => {
-    if (peerRef.current) { try { peerRef.current.destroy(); } catch(e) {} peerRef.current = null; }
-    if (localStreamRef.current) { localStreamRef.current.getTracks().forEach(t => t.stop()); localStreamRef.current = null; }
+    console.log('[Call] Cleaning up...');
+    if (peerConnectionRef.current) {
+      try { peerConnectionRef.current.close(); } catch(e) {}
+      peerConnectionRef.current = null;
+    }
+    if (localStreamRef.current) {
+      localStreamRef.current.getTracks().forEach(t => t.stop());
+      localStreamRef.current = null;
+    }
+    remoteStreamRef.current = null;
     if (timerRef.current) { clearInterval(timerRef.current); timerRef.current = null; }
     if (callTimeoutRef.current) { clearTimeout(callTimeoutRef.current); callTimeoutRef.current = null; }
-    signalSentRef.current = false;
+    pendingCandidatesRef.current = [];
+    hasRemoteDescRef.current = false;
     setCallState('idle');
     setCallPartner(null);
     setCallDuration(0);
@@ -47,14 +61,14 @@ const CallManager = forwardRef(({ socket, currentUser, contacts }, ref) => {
     setIsCamOff(false);
   }, []);
 
-  // Send a missed call message via socket
+  // ===== Send missed call message =====
   const sendMissedCallMessage = useCallback((contactId, type) => {
     if (!socket || !currentUser) return;
     const msg = {
-      id: Date.now().toString(),
+      id: Date.now().toString() + Math.random().toString(36).substr(2, 5),
       text: type === 'video' ? '📹 Cevapsız görüntülü arama' : '📞 Cevapsız sesli arama',
-      senderId: currentUser.id,
-      receiverId: contactId,
+      senderId: currentUser.id.toString(),
+      receiverId: contactId.toString(),
       timestamp: new Date().toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' }),
       isMedia: false,
       mediaUrl: null,
@@ -63,183 +77,255 @@ const CallManager = forwardRef(({ socket, currentUser, contacts }, ref) => {
     socket.emit('send_message', msg);
   }, [socket, currentUser]);
 
-  // Socket listeners
-  useEffect(() => {
-    if (!socket) return;
+  // ===== Create RTCPeerConnection =====
+  const createPeerConnection = useCallback((partnerId) => {
+    const pc = new RTCPeerConnection({ iceServers: ICE_SERVERS });
 
-    const handleIncomingCall = ({ signal, from, name, callType: type }) => {
-      console.log('Incoming call from', name, 'type:', type);
-      incomingSignalRef.current = signal;
-      setCallType(type || 'video');
-      const partner = contacts.find(c => c.id.toString() === from.toString());
-      setCallPartner(partner || { id: from, name: name || 'Bilinmeyen', avatar: '' });
-      setCallState('incoming');
+    // Send ICE candidates via socket (trickle ICE)
+    pc.onicecandidate = (event) => {
+      if (event.candidate) {
+        console.log('[ICE] Sending candidate');
+        socket.emit('ice-candidate', {
+          to: partnerId,
+          candidate: event.candidate
+        });
+      }
     };
 
-    const handleCallAccepted = ({ signal }) => {
-      console.log('Call accepted, signaling peer');
-      if (callTimeoutRef.current) { clearTimeout(callTimeoutRef.current); callTimeoutRef.current = null; }
-      if (peerRef.current) peerRef.current.signal(signal);
-      setCallState('active');
-      timerRef.current = setInterval(() => setCallDuration(prev => prev + 1), 1000);
+    pc.oniceconnectionstatechange = () => {
+      console.log('[ICE] Connection state:', pc.iceConnectionState);
+      if (pc.iceConnectionState === 'disconnected' || pc.iceConnectionState === 'failed') {
+        console.warn('[ICE] Connection lost or failed');
+        if (callStateRef.current !== 'idle') {
+          socket.emit('callEnded', { to: partnerId });
+          cleanup();
+        }
+      }
     };
 
-    const handleCallEnded = () => cleanup();
-
-    socket.on('incomingCall', handleIncomingCall);
-    socket.on('callAccepted', handleCallAccepted);
-    socket.on('callEnded', handleCallEnded);
-
-    return () => {
-      socket.off('incomingCall', handleIncomingCall);
-      socket.off('callAccepted', handleCallAccepted);
-      socket.off('callEnded', handleCallEnded);
+    pc.ontrack = (event) => {
+      console.log('[Call] Got remote track:', event.track.kind);
+      if (!remoteStreamRef.current) {
+        remoteStreamRef.current = new MediaStream();
+      }
+      remoteStreamRef.current.addTrack(event.track);
+      if (remoteVideoRef.current) {
+        remoteVideoRef.current.srcObject = remoteStreamRef.current;
+      }
     };
-  }, [socket, contacts, cleanup]);
 
-  // Helper: get media stream with fallback
+    peerConnectionRef.current = pc;
+    return pc;
+  }, [socket, cleanup]);
+
+  // ===== Process queued ICE candidates =====
+  const processPendingCandidates = useCallback(() => {
+    const pc = peerConnectionRef.current;
+    if (!pc || !hasRemoteDescRef.current) return;
+    while (pendingCandidatesRef.current.length > 0) {
+      const candidate = pendingCandidatesRef.current.shift();
+      console.log('[ICE] Adding queued candidate');
+      pc.addIceCandidate(new RTCIceCandidate(candidate)).catch(e => {
+        console.warn('[ICE] Failed to add candidate:', e);
+      });
+    }
+  }, []);
+
+  // ===== Get media stream with fallback =====
   const getMediaStream = async (type) => {
-    const isSecure = window.location.protocol === 'https:' || 
-                     window.location.protocol === 'capacitor:' ||
-                     window.location.hostname === 'localhost' ||
-                     window.location.hostname.includes('sdnnet.com.tr') ||
-                     window.location.origin.includes('localhost');
-    
     if (type === 'video') {
       try {
-        console.log('Requesting Video+Audio...');
-        const stream = await navigator.mediaDevices.getUserMedia({ video: true, audio: true });
-        console.log('Stream obtained:', stream.id);
-        return stream;
+        console.log('[Media] Requesting video+audio...');
+        return await navigator.mediaDevices.getUserMedia({ video: true, audio: true });
       } catch (err) {
-        console.warn('Video+Audio failing, trying audio only...', err.name);
+        console.warn('[Media] Video failed, trying audio only...', err.name);
         try {
           const audioStream = await navigator.mediaDevices.getUserMedia({ audio: true, video: false });
           setCallType('audio');
           return audioStream;
         } catch (err2) {
-          console.error('Audio also failed:', err2.name);
-          alert('Kamera veya mikrofon izni alınamadı (Hata: ' + err2.name + ')');
+          console.error('[Media] Audio also failed:', err2.name);
+          alert('Kamera veya mikrofon izni alınamadı! Hata: ' + err2.name);
           throw err2;
         }
       }
     } else {
-      console.log('Requesting Audio only...');
+      console.log('[Media] Requesting audio only...');
       return await navigator.mediaDevices.getUserMedia({ audio: true, video: false });
     }
   };
 
-  // Initiate call
+  // ===== Socket listeners =====
+  useEffect(() => {
+    if (!socket) return;
+
+    // Incoming call — receive an offer
+    const handleIncomingCall = ({ signal, from, name, callType: type }) => {
+      console.log('[Call] Incoming call from', name, 'type:', type);
+      if (callStateRef.current !== 'idle') {
+        console.warn('[Call] Already in a call, rejecting incoming');
+        socket.emit('callEnded', { to: from });
+        return;
+      }
+      // Store the offer for when user answers
+      pendingCandidatesRef.current = [];
+      hasRemoteDescRef.current = false;
+      setCallType(type || 'video');
+      const partner = contacts.find(c => c.id.toString() === from.toString());
+      setCallPartner(partner || { id: from, name: name || 'Bilinmeyen', avatar: '' });
+      // Store the offer SDP in a ref
+      peerConnectionRef.current = signal; // temporarily store offer here
+      setCallState('incoming');
+    };
+
+    // Call accepted — receive an answer
+    const handleCallAccepted = async ({ signal }) => {
+      console.log('[Call] Call accepted, setting remote description');
+      if (callTimeoutRef.current) { clearTimeout(callTimeoutRef.current); callTimeoutRef.current = null; }
+      const pc = peerConnectionRef.current;
+      if (!pc || !(pc instanceof RTCPeerConnection)) return;
+      try {
+        await pc.setRemoteDescription(new RTCSessionDescription(signal));
+        hasRemoteDescRef.current = true;
+        processPendingCandidates();
+        setCallState('active');
+        timerRef.current = setInterval(() => setCallDuration(prev => prev + 1), 1000);
+      } catch (err) {
+        console.error('[Call] Failed to set remote desc:', err);
+        cleanup();
+      }
+    };
+
+    // ICE candidate from remote
+    const handleIceCandidate = ({ candidate }) => {
+      const pc = peerConnectionRef.current;
+      if (!pc || !(pc instanceof RTCPeerConnection)) {
+        pendingCandidatesRef.current.push(candidate);
+        return;
+      }
+      if (!hasRemoteDescRef.current) {
+        pendingCandidatesRef.current.push(candidate);
+        return;
+      }
+      console.log('[ICE] Adding remote candidate');
+      pc.addIceCandidate(new RTCIceCandidate(candidate)).catch(e => {
+        console.warn('[ICE] Failed to add remote candidate:', e);
+      });
+    };
+
+    const handleCallEnded = () => {
+      console.log('[Call] Remote ended call');
+      cleanup();
+    };
+
+    socket.on('incomingCall', handleIncomingCall);
+    socket.on('callAccepted', handleCallAccepted);
+    socket.on('callEnded', handleCallEnded);
+    socket.on('ice-candidate', handleIceCandidate);
+
+    return () => {
+      socket.off('incomingCall', handleIncomingCall);
+      socket.off('callAccepted', handleCallAccepted);
+      socket.off('callEnded', handleCallEnded);
+      socket.off('ice-candidate', handleIceCandidate);
+    };
+  }, [socket, contacts, cleanup, processPendingCandidates]);
+
+  // ===== Initiate call (caller creates offer) =====
   const startCall = useCallback(async (contactId, type) => {
     const partner = contacts.find(c => c.id.toString() === contactId.toString());
     if (!partner) return;
+    
+    console.log('[Call] Starting', type, 'call to', partner.name);
     setCallPartner(partner);
     setCallType(type);
     setCallState('calling');
-    signalSentRef.current = false;
+    pendingCandidatesRef.current = [];
+    hasRemoteDescRef.current = false;
 
     // 45-second timeout
     callTimeoutRef.current = setTimeout(() => {
       if (callStateRef.current === 'calling') {
-        console.warn('Call unanswered timeout');
+        console.warn('[Call] Timeout — unanswered');
         sendMissedCallMessage(contactId, type);
-        socket.emit('callEnded', { to: partner.id });
+        socket.emit('callEnded', { to: contactId });
         cleanup();
       }
     }, 45000);
 
     try {
-      console.log('Starting call process for', contactId);
       const stream = await getMediaStream(type);
       localStreamRef.current = stream;
-
       if (localVideoRef.current) localVideoRef.current.srcObject = stream;
 
       const actualType = stream.getVideoTracks().length > 0 ? 'video' : 'audio';
+      const pc = createPeerConnection(contactId);
 
-      const peer = new SimplePeer({
-        initiator: true,
-        trickle: false,
-        stream,
-        config: { iceServers: ICE_SERVERS }
+      // Add local tracks to peer connection
+      stream.getTracks().forEach(track => {
+        pc.addTrack(track, stream);
       });
 
-      peer.on('signal', (data) => {
-        if (!signalSentRef.current) {
-          signalSentRef.current = true;
-          console.log('SENDING SIGNAL TO SERVER...', contactId);
-          socket.emit('callUser', {
-            userToCall: contactId,
-            signalData: data,
-            from: currentUser.id,
-            name: currentUser.name,
-            callType: actualType
-          });
-        }
+      // Create offer
+      const offer = await pc.createOffer();
+      await pc.setLocalDescription(offer);
+      console.log('[Call] Offer created, sending to', contactId);
+
+      socket.emit('callUser', {
+        userToCall: contactId,
+        signalData: pc.localDescription,
+        from: currentUser.id,
+        name: currentUser.name,
+        callType: actualType
       });
-
-      peer.on('stream', (remoteStream) => {
-        console.log('Got remote stream SUCCESS');
-        if (remoteVideoRef.current) remoteVideoRef.current.srcObject = remoteStream;
-      });
-
-      peer.on('error', (e) => {
-        console.error('Peer error:', e);
-        if (callStateRef.current !== 'idle') cleanup();
-      });
-
-      peer.on('close', () => cleanup());
-
-      peerRef.current = peer;
     } catch (err) {
-      console.error('General call start failure:', err);
+      console.error('[Call] Start failure:', err);
       cleanup();
     }
-  }, [contacts, currentUser, socket, cleanup, sendMissedCallMessage]);
+  }, [contacts, currentUser, socket, cleanup, sendMissedCallMessage, createPeerConnection]);
 
-  // Answer call
+  // ===== Answer call (callee creates answer) =====
   const answerCall = useCallback(async () => {
+    if (!callPartner) return;
+    const offer = peerConnectionRef.current; // stored offer SDP
+    if (!offer) { cleanup(); return; }
+
     try {
       const stream = await getMediaStream(callType);
       localStreamRef.current = stream;
-
       if (localVideoRef.current) localVideoRef.current.srcObject = stream;
 
-      const peer = new SimplePeer({
-        initiator: false,
-        trickle: false,
-        stream,
-        config: { iceServers: ICE_SERVERS }
+      const pc = createPeerConnection(callPartner.id);
+
+      // Add local tracks
+      stream.getTracks().forEach(track => {
+        pc.addTrack(track, stream);
       });
 
-      peer.on('signal', (data) => {
-        console.log('Answering signal sent back to caller');
-        socket.emit('answerCall', { 
-          signal: data, 
-          to: callPartner.id 
-        });
+      // Set remote description (the offer)
+      await pc.setRemoteDescription(new RTCSessionDescription(offer));
+      hasRemoteDescRef.current = true;
+
+      // Process any ICE candidates that arrived before we set remote desc
+      processPendingCandidates();
+
+      // Create answer
+      const answer = await pc.createAnswer();
+      await pc.setLocalDescription(answer);
+      console.log('[Call] Answer created, sending back');
+
+      socket.emit('answerCall', {
+        signal: pc.localDescription,
+        to: callPartner.id
       });
 
-      peer.on('stream', (remoteStream) => {
-        if (remoteVideoRef.current) remoteVideoRef.current.srcObject = remoteStream;
-      });
-
-      peer.on('error', (e) => {
-        console.error('Answer peer error:', e);
-        cleanup();
-      });
-
-      peer.on('close', () => cleanup());
-
-      peer.signal(incomingSignalRef.current);
-      peerRef.current = peer;
       setCallState('active');
       timerRef.current = setInterval(() => setCallDuration(prev => prev + 1), 1000);
     } catch (err) {
-      console.error('Answer call failure:', err);
+      console.error('[Call] Answer failure:', err);
       cleanup();
     }
-  }, [callPartner, callType, socket, cleanup]);
+  }, [callPartner, callType, socket, cleanup, createPeerConnection, processPendingCandidates]);
 
   const rejectCall = useCallback(() => {
     if (callPartner) socket.emit('callEnded', { to: callPartner.id });
@@ -273,7 +359,7 @@ const CallManager = forwardRef(({ socket, currentUser, contacts }, ref) => {
 
   useImperativeHandle(ref, () => ({ startCall }));
 
-  // Incoming Call — WhatsApp Fullscreen
+  // ===== INCOMING CALL SCREEN =====
   if (callState === 'incoming' && callPartner) {
     return (
       <div className="wa-call-screen incoming">
@@ -287,7 +373,7 @@ const CallManager = forwardRef(({ socket, currentUser, contacts }, ref) => {
           
           <div className="wa-call-center">
             <div className="wa-avatar-ring">
-              <img src={callPartner.avatar || 'https://via.placeholder.com/120'} alt="" className="wa-avatar" />
+              <img src={getMediaUrl(callPartner.avatar) || 'https://via.placeholder.com/120'} alt="" className="wa-avatar" />
             </div>
             <h2 className="wa-caller-name">{callPartner.name}</h2>
             <p className="wa-call-status">Gelen arama...</p>
@@ -313,7 +399,7 @@ const CallManager = forwardRef(({ socket, currentUser, contacts }, ref) => {
     );
   }
 
-  // Active Call / Calling Screen — WhatsApp Style
+  // ===== CALLING / ACTIVE CALL SCREEN =====
   if (callState === 'calling' || callState === 'active') {
     return (
       <div className="wa-call-screen active">
@@ -336,7 +422,7 @@ const CallManager = forwardRef(({ socket, currentUser, contacts }, ref) => {
         {(callType === 'audio' || callState === 'calling') && (
           <div className="wa-call-center">
             <div className={`wa-avatar-ring ${callState === 'calling' ? 'calling' : ''}`}>
-              <img src={callPartner?.avatar || 'https://via.placeholder.com/120'} alt="" className="wa-avatar" />
+              <img src={getMediaUrl(callPartner?.avatar) || 'https://via.placeholder.com/120'} alt="" className="wa-avatar" />
             </div>
             <h2 className="wa-caller-name">{callPartner?.name}</h2>
             <p className="wa-call-status">
