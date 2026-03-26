@@ -9,3 +9,7 @@ server/uploads/avatars/*
 !server/uploads/media/.gitkeep
 !server/uploads/avatars/.gitkeep
 .gemini
+
+# Firebase — sensitive credentials, DO NOT COMMIT
+server/firebase-service-account.json
+android/app/google-services.json
