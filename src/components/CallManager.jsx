@@ -13,7 +13,7 @@ const ICE_SERVERS = [
 ];
 
 const CallManager = forwardRef(({ socket, currentUser, contacts }, ref) => {
-  const [callState, setCallState] = useState('idle'); // idle | calling | incoming | active
+  const [callState, setCallState] = useState('idle');
   const [callType, setCallType] = useState('video');
   const [callPartner, setCallPartner] = useState(null);
   const [isMuted, setIsMuted] = useState(false);
@@ -25,14 +25,32 @@ const CallManager = forwardRef(({ socket, currentUser, contacts }, ref) => {
   const remoteStreamRef = useRef(null);
   const localVideoRef = useRef(null);
   const remoteVideoRef = useRef(null);
+  const remoteAudioRef = useRef(null); // For audio-only calls
   const timerRef = useRef(null);
   const callTimeoutRef = useRef(null);
   const callStateRef = useRef('idle');
   const pendingCandidatesRef = useRef([]);
   const hasRemoteDescRef = useRef(false);
+  const incomingOfferRef = useRef(null); // Store incoming offer separately
 
-  // Keep ref in sync with state
   useEffect(() => { callStateRef.current = callState; }, [callState]);
+
+  // ===== Sync streams to video/audio elements when refs or state change =====
+  useEffect(() => {
+    if (localVideoRef.current && localStreamRef.current) {
+      localVideoRef.current.srcObject = localStreamRef.current;
+    }
+  }, [callState, callType]);
+
+  useEffect(() => {
+    if (remoteVideoRef.current && remoteStreamRef.current) {
+      remoteVideoRef.current.srcObject = remoteStreamRef.current;
+    }
+    // Always keep remote audio element playing
+    if (remoteAudioRef.current && remoteStreamRef.current) {
+      remoteAudioRef.current.srcObject = remoteStreamRef.current;
+    }
+  }, [callState, callType]);
 
   // ===== Cleanup =====
   const cleanup = useCallback(() => {
@@ -46,6 +64,7 @@ const CallManager = forwardRef(({ socket, currentUser, contacts }, ref) => {
       localStreamRef.current = null;
     }
     remoteStreamRef.current = null;
+    incomingOfferRef.current = null;
     if (timerRef.current) { clearInterval(timerRef.current); timerRef.current = null; }
     if (callTimeoutRef.current) { clearTimeout(callTimeoutRef.current); callTimeoutRef.current = null; }
     pendingCandidatesRef.current = [];
@@ -57,39 +76,34 @@ const CallManager = forwardRef(({ socket, currentUser, contacts }, ref) => {
     setIsCamOff(false);
   }, []);
 
-  // ===== Send missed call message =====
   const sendMissedCallMessage = useCallback((contactId, type) => {
     if (!socket || !currentUser) return;
-    const msg = {
+    socket.emit('send_message', {
       id: Date.now().toString() + Math.random().toString(36).substr(2, 5),
       text: type === 'video' ? '📹 Cevapsız görüntülü arama' : '📞 Cevapsız sesli arama',
       senderId: currentUser.id.toString(),
       receiverId: contactId.toString(),
       timestamp: new Date().toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' }),
-      isMedia: false,
-      mediaUrl: null,
-      mediaType: null
-    };
-    socket.emit('send_message', msg);
+      isMedia: false, mediaUrl: null, mediaType: null
+    });
   }, [socket, currentUser]);
 
   // ===== Create RTCPeerConnection =====
   const createPeerConnection = useCallback((partnerId) => {
     const pc = new RTCPeerConnection({ iceServers: ICE_SERVERS });
 
-    // Send ICE candidates via socket (trickle ICE)
     pc.onicecandidate = (event) => {
       if (event.candidate) {
-        console.log('[ICE] Sending candidate');
-        socket.emit('ice-candidate', {
-          to: partnerId,
-          candidate: event.candidate
-        });
+        console.log('[ICE] Sending candidate:', event.candidate.type);
+        socket.emit('ice-candidate', { to: partnerId, candidate: event.candidate });
       }
     };
 
     pc.oniceconnectionstatechange = () => {
-      console.log('[ICE] Connection state:', pc.iceConnectionState);
+      console.log('[ICE] State:', pc.iceConnectionState);
+      if (pc.iceConnectionState === 'connected' || pc.iceConnectionState === 'completed') {
+        console.log('[ICE] ✅ Connected!');
+      }
       if (pc.iceConnectionState === 'disconnected' || pc.iceConnectionState === 'failed') {
         console.warn('[ICE] Connection lost or failed');
         if (callStateRef.current !== 'idle') {
@@ -99,12 +113,21 @@ const CallManager = forwardRef(({ socket, currentUser, contacts }, ref) => {
       }
     };
 
+    // THIS IS THE KEY — handle remote tracks
     pc.ontrack = (event) => {
-      console.log('[Call] Got remote track:', event.track.kind);
+      console.log('[Call] *** Got remote track:', event.track.kind, 'readyState:', event.track.readyState);
+      
       if (!remoteStreamRef.current) {
         remoteStreamRef.current = new MediaStream();
       }
       remoteStreamRef.current.addTrack(event.track);
+      
+      // Immediately attach to audio element (always available)
+      if (remoteAudioRef.current) {
+        remoteAudioRef.current.srcObject = remoteStreamRef.current;
+        remoteAudioRef.current.play().catch(e => console.warn('[Audio] Autoplay blocked:', e));
+      }
+      // Attach to video element if available
       if (remoteVideoRef.current) {
         remoteVideoRef.current.srcObject = remoteStreamRef.current;
       }
@@ -114,22 +137,19 @@ const CallManager = forwardRef(({ socket, currentUser, contacts }, ref) => {
     return pc;
   }, [socket, cleanup]);
 
-  // ===== Process queued ICE candidates =====
   const processPendingCandidates = useCallback(() => {
     const pc = peerConnectionRef.current;
     if (!pc || !hasRemoteDescRef.current) return;
     while (pendingCandidatesRef.current.length > 0) {
       const candidate = pendingCandidatesRef.current.shift();
-      console.log('[ICE] Adding queued candidate');
       pc.addIceCandidate(new RTCIceCandidate(candidate)).catch(e => {
         console.warn('[ICE] Failed to add candidate:', e);
       });
     }
   }, []);
 
-  // ===== Get media stream with fallback =====
+  // ===== Get media stream =====
   const getMediaStream = async (type) => {
-    // Ensure mediaDevices is available
     if (!navigator.mediaDevices || !navigator.mediaDevices.getUserMedia) {
       alert('Bu cihaz kamera/mikrofon desteklemiyor!');
       throw new Error('getUserMedia not supported');
@@ -137,46 +157,28 @@ const CallManager = forwardRef(({ socket, currentUser, contacts }, ref) => {
 
     if (type === 'video') {
       try {
-        console.log('[Media] Requesting video+audio...');
         return await navigator.mediaDevices.getUserMedia({
           video: { facingMode: 'user', width: { ideal: 640 }, height: { ideal: 480 } },
           audio: { echoCancellation: true, noiseSuppression: true }
         });
       } catch (err) {
-        console.warn('[Media] Video+audio failed:', err.name, err.message);
-        // Fallback: try just video
+        console.warn('[Media] Video+audio failed:', err.name);
         try {
-          console.log('[Media] Trying video only...');
-          const vidStream = await navigator.mediaDevices.getUserMedia({ video: true });
-          try {
-            const audioStream = await navigator.mediaDevices.getUserMedia({ audio: true });
-            audioStream.getAudioTracks().forEach(t => vidStream.addTrack(t));
-          } catch(e) {
-            console.warn('[Media] Audio track failed, video only');
-          }
-          return vidStream;
-        } catch(err2) {
-          console.warn('[Media] Video failed, trying audio only...', err2.name);
-          try {
-            const audioStream = await navigator.mediaDevices.getUserMedia({ audio: true });
-            setCallType('audio');
-            return audioStream;
-          } catch (err3) {
-            console.error('[Media] All media failed:', err3.name);
-            alert('Kamera veya mikrofon izni alınamadı!\n\nLütfen uygulama ayarlarından izinleri kontrol edin.\nHata: ' + err3.name);
-            throw err3;
-          }
+          const stream = await navigator.mediaDevices.getUserMedia({ audio: true });
+          setCallType('audio');
+          return stream;
+        } catch (err2) {
+          alert('Kamera/mikrofon izni alınamadı!\nHata: ' + err2.name);
+          throw err2;
         }
       }
     } else {
       try {
-        console.log('[Media] Requesting audio only...');
         return await navigator.mediaDevices.getUserMedia({
           audio: { echoCancellation: true, noiseSuppression: true }
         });
       } catch (err) {
-        console.error('[Media] Audio failed:', err.name);
-        alert('Mikrofon izni alınamadı!\n\nLütfen uygulama ayarlarından mikrofon iznini kontrol edin.\nHata: ' + err.name);
+        alert('Mikrofon izni alınamadı!\nHata: ' + err.name);
         throw err;
       }
     }
@@ -186,35 +188,34 @@ const CallManager = forwardRef(({ socket, currentUser, contacts }, ref) => {
   useEffect(() => {
     if (!socket) return;
 
-    // Incoming call — receive an offer
     const handleIncomingCall = ({ signal, from, name, callType: type }) => {
       console.log('[Call] Incoming call from', name, 'type:', type);
       if (callStateRef.current !== 'idle') {
-        console.warn('[Call] Already in a call, rejecting incoming');
         socket.emit('callEnded', { to: from });
         return;
       }
-      // Store the offer for when user answers
       pendingCandidatesRef.current = [];
       hasRemoteDescRef.current = false;
+      incomingOfferRef.current = signal; // Store offer in dedicated ref
       setCallType(type || 'video');
       const partner = contacts.find(c => c.id.toString() === from.toString());
       setCallPartner(partner || { id: from, name: name || 'Bilinmeyen', avatar: '' });
-      // Store the offer SDP in a ref
-      peerConnectionRef.current = signal; // temporarily store offer here
       setCallState('incoming');
     };
 
-    // Call accepted — receive an answer
     const handleCallAccepted = async ({ signal }) => {
-      console.log('[Call] Call accepted, setting remote description');
+      console.log('[Call] Call accepted! Setting remote description...');
       if (callTimeoutRef.current) { clearTimeout(callTimeoutRef.current); callTimeoutRef.current = null; }
       const pc = peerConnectionRef.current;
-      if (!pc || !(pc instanceof RTCPeerConnection)) return;
+      if (!pc || !(pc instanceof RTCPeerConnection)) {
+        console.error('[Call] No valid peer connection');
+        return;
+      }
       try {
         await pc.setRemoteDescription(new RTCSessionDescription(signal));
         hasRemoteDescRef.current = true;
         processPendingCandidates();
+        console.log('[Call] Remote description set, call is active!');
         setCallState('active');
         timerRef.current = setInterval(() => setCallDuration(prev => prev + 1), 1000);
       } catch (err) {
@@ -223,18 +224,12 @@ const CallManager = forwardRef(({ socket, currentUser, contacts }, ref) => {
       }
     };
 
-    // ICE candidate from remote
     const handleIceCandidate = ({ candidate }) => {
       const pc = peerConnectionRef.current;
-      if (!pc || !(pc instanceof RTCPeerConnection)) {
+      if (!pc || !(pc instanceof RTCPeerConnection) || !hasRemoteDescRef.current) {
         pendingCandidatesRef.current.push(candidate);
         return;
       }
-      if (!hasRemoteDescRef.current) {
-        pendingCandidatesRef.current.push(candidate);
-        return;
-      }
-      console.log('[ICE] Adding remote candidate');
       pc.addIceCandidate(new RTCIceCandidate(candidate)).catch(e => {
         console.warn('[ICE] Failed to add remote candidate:', e);
       });
@@ -258,7 +253,7 @@ const CallManager = forwardRef(({ socket, currentUser, contacts }, ref) => {
     };
   }, [socket, contacts, cleanup, processPendingCandidates]);
 
-  // ===== Initiate call (caller creates offer) =====
+  // ===== Start call (caller) =====
   const startCall = useCallback(async (contactId, type) => {
     const partner = contacts.find(c => c.id.toString() === contactId.toString());
     if (!partner) return;
@@ -269,11 +264,10 @@ const CallManager = forwardRef(({ socket, currentUser, contacts }, ref) => {
     setCallState('calling');
     pendingCandidatesRef.current = [];
     hasRemoteDescRef.current = false;
+    remoteStreamRef.current = null;
 
-    // 45-second timeout
     callTimeoutRef.current = setTimeout(() => {
       if (callStateRef.current === 'calling') {
-        console.warn('[Call] Timeout — unanswered');
         sendMissedCallMessage(contactId, type);
         socket.emit('callEnded', { to: contactId });
         cleanup();
@@ -283,20 +277,19 @@ const CallManager = forwardRef(({ socket, currentUser, contacts }, ref) => {
     try {
       const stream = await getMediaStream(type);
       localStreamRef.current = stream;
-      if (localVideoRef.current) localVideoRef.current.srcObject = stream;
 
       const actualType = stream.getVideoTracks().length > 0 ? 'video' : 'audio';
       const pc = createPeerConnection(contactId);
 
-      // Add local tracks to peer connection
+      // Add ALL tracks to peer connection
       stream.getTracks().forEach(track => {
+        console.log('[Call] Adding local track:', track.kind);
         pc.addTrack(track, stream);
       });
 
-      // Create offer
       const offer = await pc.createOffer();
       await pc.setLocalDescription(offer);
-      console.log('[Call] Offer created, sending to', contactId);
+      console.log('[Call] Offer created, sending...');
 
       socket.emit('callUser', {
         userToCall: contactId,
@@ -311,35 +304,34 @@ const CallManager = forwardRef(({ socket, currentUser, contacts }, ref) => {
     }
   }, [contacts, currentUser, socket, cleanup, sendMissedCallMessage, createPeerConnection]);
 
-  // ===== Answer call (callee creates answer) =====
+  // ===== Answer call (callee) =====
   const answerCall = useCallback(async () => {
     if (!callPartner) return;
-    const offer = peerConnectionRef.current; // stored offer SDP
-    if (!offer) { cleanup(); return; }
+    const offer = incomingOfferRef.current; // Get offer from dedicated ref
+    if (!offer) { console.error('[Call] No offer found!'); cleanup(); return; }
 
     try {
       const stream = await getMediaStream(callType);
       localStreamRef.current = stream;
-      if (localVideoRef.current) localVideoRef.current.srcObject = stream;
 
+      remoteStreamRef.current = null;
       const pc = createPeerConnection(callPartner.id);
 
-      // Add local tracks
+      // Add ALL tracks
       stream.getTracks().forEach(track => {
+        console.log('[Call] Adding local track:', track.kind);
         pc.addTrack(track, stream);
       });
 
       // Set remote description (the offer)
       await pc.setRemoteDescription(new RTCSessionDescription(offer));
       hasRemoteDescRef.current = true;
-
-      // Process any ICE candidates that arrived before we set remote desc
       processPendingCandidates();
 
       // Create answer
       const answer = await pc.createAnswer();
       await pc.setLocalDescription(answer);
-      console.log('[Call] Answer created, sending back');
+      console.log('[Call] Answer created, sending...');
 
       socket.emit('answerCall', {
         signal: pc.localDescription,
@@ -386,10 +378,16 @@ const CallManager = forwardRef(({ socket, currentUser, contacts }, ref) => {
 
   useImperativeHandle(ref, () => ({ startCall }));
 
-  // ===== INCOMING CALL SCREEN =====
+  // ===== HIDDEN AUDIO ELEMENT — always present for remote audio playback =====
+  const audioElement = (
+    <audio ref={remoteAudioRef} autoPlay playsInline style={{ display: 'none' }} />
+  );
+
+  // ===== INCOMING CALL =====
   if (callState === 'incoming' && callPartner) {
     return (
       <div className="wa-call-screen incoming">
+        {audioElement}
         <div className="wa-call-bg"></div>
         <div className="wa-call-content">
           <div className="wa-call-top">
@@ -397,7 +395,6 @@ const CallManager = forwardRef(({ socket, currentUser, contacts }, ref) => {
               {callType === 'video' ? '📹 Görüntülü Arama' : '📞 Sesli Arama'}
             </span>
           </div>
-          
           <div className="wa-call-center">
             <div className="wa-avatar-ring">
               <img src={getMediaUrl(callPartner.avatar) || 'https://via.placeholder.com/120'} alt="" className="wa-avatar" />
@@ -406,7 +403,6 @@ const CallManager = forwardRef(({ socket, currentUser, contacts }, ref) => {
             <p className="wa-call-status">Gelen arama...</p>
             <span className="wa-encrypted">🔒 Uçtan uca şifrelenmiş</span>
           </div>
-
           <div className="wa-incoming-actions">
             <div className="wa-action-item">
               <button className="wa-call-btn reject" onClick={rejectCall}>
@@ -426,16 +422,21 @@ const CallManager = forwardRef(({ socket, currentUser, contacts }, ref) => {
     );
   }
 
-  // ===== CALLING / ACTIVE CALL SCREEN =====
+  // ===== CALLING / ACTIVE =====
   if (callState === 'calling' || callState === 'active') {
     return (
       <div className="wa-call-screen active">
+        {/* ALWAYS render hidden audio for remote sound */}
+        {audioElement}
+
+        {/* Remote video — full screen background */}
         {callType === 'video' && callState === 'active' ? (
           <video ref={remoteVideoRef} className="wa-remote-video" autoPlay playsInline />
         ) : (
           <div className="wa-call-bg"></div>
         )}
 
+        {/* Top bar */}
         <div className="wa-call-topbar">
           <div className="wa-topbar-info">
             <h3>{callPartner?.name || ''}</h3>
@@ -446,6 +447,7 @@ const CallManager = forwardRef(({ socket, currentUser, contacts }, ref) => {
           </div>
         </div>
 
+        {/* Avatar center (audio calls or calling state) */}
         {(callType === 'audio' || callState === 'calling') && (
           <div className="wa-call-center">
             <div className={`wa-avatar-ring ${callState === 'calling' ? 'calling' : ''}`}>
@@ -459,12 +461,14 @@ const CallManager = forwardRef(({ socket, currentUser, contacts }, ref) => {
           </div>
         )}
 
-        {callType === 'video' && callState === 'active' && (
+        {/* Local video PiP */}
+        {callType === 'video' && (
           <div className="wa-local-pip">
             <video ref={localVideoRef} autoPlay playsInline muted />
           </div>
         )}
 
+        {/* Controls */}
         <div className="wa-call-controls">
           {callState === 'active' && callType === 'video' && (
             <div className="wa-ctrl-item">
@@ -493,7 +497,8 @@ const CallManager = forwardRef(({ socket, currentUser, contacts }, ref) => {
     );
   }
 
-  return null;
+  // Even when idle, render hidden audio element so remote audio is always ready
+  return audioElement;
 });
 
 export default CallManager;

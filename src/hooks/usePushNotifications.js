@@ -1,5 +1,4 @@
 import { useEffect, useRef, useCallback } from 'react';
-import { PushNotifications } from '@capacitor/push-notifications';
 import { API_URL } from '../config';
 
 const isNative = () => window?.Capacitor?.isNativePlatform?.() === true;
@@ -11,6 +10,7 @@ const isNative = () => window?.Capacitor?.isNativePlatform?.() === true;
  */
 export default function usePushNotifications(currentUser) {
   const tokenRef = useRef(null);
+  const setupDoneRef = useRef(false);
 
   // Register FCM token with server
   const registerToken = useCallback(async (token) => {
@@ -35,10 +35,29 @@ export default function usePushNotifications(currentUser) {
   }, [currentUser]);
 
   useEffect(() => {
-    if (!isNative() || !currentUser) return;
+    if (!isNative() || !currentUser || setupDoneRef.current) return;
 
     const setup = async () => {
       try {
+        const { PushNotifications } = await import('@capacitor/push-notifications');
+
+        // Create notification channel for Android 8+
+        try {
+          await PushNotifications.createChannel({
+            id: 'eemessage_messages',
+            name: 'EEMessage Bildirimleri',
+            description: 'Mesaj ve arama bildirimleri',
+            importance: 5, // MAX importance
+            visibility: 1, // PUBLIC
+            sound: 'default',
+            vibration: true,
+            lights: true,
+          });
+          console.log('[FCM] Notification channel created');
+        } catch (e) {
+          console.warn('[FCM] Channel creation error (might already exist):', e);
+        }
+
         // Request permission
         const permResult = await PushNotifications.requestPermissions();
         if (permResult.receive !== 'granted') {
@@ -64,15 +83,25 @@ export default function usePushNotifications(currentUser) {
         // Notification received while app is in foreground
         PushNotifications.addListener('pushNotificationReceived', (notification) => {
           console.log('[FCM] Foreground notification:', notification);
-          // We don't show anything here — the app is already open
+          // Show local notification since FCM doesn't auto-show in foreground
+          try {
+            if ('Notification' in window && Notification.permission === 'granted') {
+              new Notification(notification.title || 'EEMessage', {
+                body: notification.body || '',
+                icon: '/app-icon.jpg',
+              });
+            }
+          } catch (e) {
+            console.warn('[FCM] Could not show foreground notification:', e);
+          }
         });
 
         // User tapped on a notification
-        PushNotifications.addListener('pushNotificationActionPerformed', (notification) => {
-          console.log('[FCM] Notification tapped:', notification);
-          // Could navigate to specific chat here
+        PushNotifications.addListener('pushNotificationActionPerformed', (action) => {
+          console.log('[FCM] Notification tapped:', action);
         });
 
+        setupDoneRef.current = true;
       } catch (err) {
         console.error('[FCM] Setup error:', err);
       }
@@ -81,7 +110,7 @@ export default function usePushNotifications(currentUser) {
     setup();
 
     return () => {
-      PushNotifications.removeAllListeners();
+      // Don't remove listeners on re-render, only on unmount
     };
   }, [currentUser, registerToken]);
 

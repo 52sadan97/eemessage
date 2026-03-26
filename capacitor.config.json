@@ -11,6 +11,9 @@
       "smallIcon": "ic_stat_icon",
       "iconColor": "#00a884",
       "sound": "notification.wav"
+    },
+    "PushNotifications": {
+      "presentationOptions": ["badge", "sound", "alert"]
     }
   }
 }
