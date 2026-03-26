@@ -58,6 +58,32 @@ function App() {
 
   const toggleTheme = () => setTheme(prev => prev === 'light' ? 'dark' : 'light');
 
+  // Request browser notification permission when user logs in
+  useEffect(() => {
+    if (!currentUser) return;
+    if ('Notification' in window && Notification.permission === 'default') {
+      Notification.requestPermission();
+    }
+  }, [currentUser]);
+
+  // Helper: show browser notification for incoming message
+  const showNotification = useCallback((msg, senderName, senderAvatar) => {
+    // Don't notify if tab is focused
+    if (document.visibilityState === 'visible') return;
+    if (!('Notification' in window) || Notification.permission !== 'granted') return;
+    const text = msg.isMedia
+      ? (msg.mediaType === 'image' ? '📷 Fotoğraf' : msg.mediaType === 'video' ? '🎥 Video' : msg.mediaType === 'audio' ? '🎤 Ses mesajı' : '📁 Dosya')
+      : (msg.text || '');
+    const notif = new Notification(senderName || 'EEMessage', {
+      body: text,
+      icon: senderAvatar || '/icons/icon-192x192.png',
+      badge: '/icons/icon-192x192.png',
+      tag: `msg-${msg.senderId}`, // group notifications by sender
+      renotify: true,
+    });
+    notif.onclick = () => { window.focus(); notif.close(); };
+  }, []);
+
   // Socket and App Listeners (Run when currentUser is available)
   useEffect(() => {
     if (!currentUser) {
@@ -100,6 +126,15 @@ function App() {
         }
         return newMap;
       });
+
+      // Show browser notification for incoming messages
+      if (msg.senderId.toString() !== currentUser.id.toString()) {
+        setContacts(prev => {
+          const sender = prev.find(c => c.id.toString() === msg.senderId.toString());
+          if (sender) showNotification(msg, sender.name, sender.avatar);
+          return prev;
+        });
+      }
 
       // Auto-read if chat is focused
       if (msg.senderId !== currentUser.id && selectedContactIdRef.current === msg.senderId.toString()) {
@@ -242,7 +277,7 @@ function App() {
       stateListener.remove();
       backListener.remove();
     };
-  }, [currentUser]);
+  }, [currentUser, showNotification]);
 
   const handleSendMessage = useCallback((msgData) => {
     if (!currentUser) return;

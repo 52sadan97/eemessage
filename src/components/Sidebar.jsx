@@ -47,30 +47,46 @@ const Sidebar = ({ contacts, selectedContactId, onSelectContact, theme, toggleTh
       </div>
 
       <div className="contacts-list">
-        {contacts.map(contact => (
-          <div 
-            key={contact.id} 
-            className={`contact-item ${selectedContactId === contact.id ? 'active' : ''}`}
-            onClick={() => onSelectContact(contact.id)}
-          >
-            <div className="avatar-wrapper">
-              <img src={getMediaUrl(contact.avatar)} alt={contact.name} className="avatar" />
-              {contact.online && <span className="online-indicator"></span>}
-            </div>
-            <div className="contact-info">
-              <div className="contact-top">
-                <span className="contact-name">{contact.name}</span>
-                <span className="contact-time">{contact.time}</span>
+        {contacts.map(contact => {
+          // Format lastSeen
+          let statusText = contact.online ? 'Çevrimiçi' : '';
+          if (!contact.online && contact.lastSeen) {
+            const diff = Date.now() - contact.lastSeen;
+            const mins = Math.floor(diff / 60000);
+            const hours = Math.floor(diff / 3600000);
+            const days = Math.floor(diff / 86400000);
+            if (mins < 1) statusText = 'Az önce aktifti';
+            else if (mins < 60) statusText = `${mins} dk önce`;
+            else if (hours < 24) statusText = `${hours} sa önce`;
+            else statusText = `${days} gün önce`;
+          }
+          return (
+            <div
+              key={contact.id}
+              className={`contact-item ${selectedContactId === contact.id ? 'active' : ''}`}
+              onClick={() => onSelectContact(contact.id)}
+            >
+              <div className="avatar-wrapper">
+                <img src={getMediaUrl(contact.avatar)} alt={contact.name} className="avatar" />
+                {contact.online && <span className="online-indicator"></span>}
               </div>
-              <div className="contact-bottom">
-                <span className="contact-last-msg">{contact.lastMessage}</span>
-                {contact.unread > 0 && (
-                  <span className="unread-badge">{contact.unread}</span>
-                )}
+              <div className="contact-info">
+                <div className="contact-top">
+                  <span className="contact-name">{contact.name}</span>
+                  <span className="contact-time">{contact.time}</span>
+                </div>
+                <div className="contact-bottom">
+                  <span className="contact-last-msg">
+                    {contact.lastMessage || (statusText && !contact.online ? <em style={{color:'var(--text-secondary)',fontSize:'0.78em'}}>{statusText}</em> : '')}
+                  </span>
+                  {contact.unread > 0 && (
+                    <span className="unread-badge">{contact.unread}</span>
+                  )}
+                </div>
               </div>
             </div>
-          </div>
-        ))}
+          );
+        })}
       </div>
       <NewChatModal 
         isOpen={isModalOpen} 

@@ -29,13 +29,15 @@ app.use('/uploads', express.static(UPLOADS_DIR));
 
 const server = http.createServer(app);
 const io = new Server(server, {
-  cors: {
-    origin: "*",
-    methods: ["GET", "POST"]
-  }
+  cors: { origin: "*", methods: ["GET", "POST"] },
+  pingTimeout: 30000,
+  pingInterval: 10000,
 });
 
 const db = new Database(path.join(DATA_DIR, 'database.sqlite'));
+// WAL mode for better concurrent read performance
+db.pragma('journal_mode = WAL');
+db.pragma('cache_size = 10000');
 
 try {
   db.exec(`
@@ -60,13 +62,19 @@ try {
       createdAt INTEGER
     );
   `);
-  // Attempt schema migration
+  // Schema migrations
   try { db.exec('ALTER TABLE messages ADD COLUMN status TEXT DEFAULT "sent"'); } catch(e){}
   try { db.exec('ALTER TABLE messages ADD COLUMN deletedBy TEXT DEFAULT "[]"'); } catch(e){}
+
+  // Performance indexes
+  try { db.exec('CREATE INDEX IF NOT EXISTS idx_messages_sender ON messages(senderId)'); } catch(e){}
+  try { db.exec('CREATE INDEX IF NOT EXISTS idx_messages_receiver ON messages(receiverId)'); } catch(e){}
+  try { db.exec('CREATE INDEX IF NOT EXISTS idx_messages_created ON messages(createdAt)'); } catch(e){}
 } catch(err) {
   console.error('DB Init Error:', err);
 }
 
+// Prepared statements
 const insertUser = db.prepare('INSERT INTO users (id, email, password, name, avatar, lastSeen) VALUES (?, ?, ?, ?, ?, ?)');
 const getUserByEmail = db.prepare('SELECT * FROM users WHERE email = ?');
 const getUserById = db.prepare('SELECT * FROM users WHERE id = ?');
@@ -75,7 +83,8 @@ const updateUserProfile = db.prepare('UPDATE users SET name = ?, avatar = ?, pas
 const getAllUsers = db.prepare('SELECT id, email, name, avatar, lastSeen FROM users');
 
 const insertMsg = db.prepare('INSERT INTO messages (id, text, senderId, receiverId, timestamp, isMedia, mediaUrl, mediaType, deleted, createdAt, status, deletedBy) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)');
-const getMessages = db.prepare('SELECT * FROM messages ORDER BY createdAt ASC');
+// FIX: Only get messages relevant to a specific user (not ALL messages)
+const getMessagesForUser = db.prepare('SELECT * FROM messages WHERE senderId = ? OR receiverId = ? ORDER BY createdAt ASC');
 const updateMessageDeleted = db.prepare('UPDATE messages SET deleted = 1, text = ?, isMedia = 0, mediaUrl = NULL WHERE id = ?');
 const getMessageById = db.prepare('SELECT * FROM messages WHERE id = ?');
 const updateMessageStatus = db.prepare('UPDATE messages SET status = ? WHERE id = ?');
@@ -87,23 +96,21 @@ const getUnreadMessages = db.prepare('SELECT id FROM messages WHERE senderId = ?
 const storage = multer.diskStorage({
   destination: (req, file, cb) => {
     const isAvatar = req.body.isAvatar === 'true';
-    cb(null, isAvatar ? 'uploads/avatars/' : 'uploads/media/');
+    cb(null, isAvatar ? AVATARS_DIR : MEDIA_DIR);
   },
   filename: (req, file, cb) => {
     const safeName = file.originalname ? file.originalname.replace(/[^a-zA-Z0-9.-]/g, '_') : 'file.bin';
     cb(null, Date.now() + '-' + safeName);
   }
 });
-const upload = multer({ storage, limits: { fileSize: 100 * 1024 * 1024 } }); // 100MB limit
+const upload = multer({ storage, limits: { fileSize: 100 * 1024 * 1024 } });
 
 app.post('/api/upload', upload.single('file'), (req, res) => {
   if (!req.file) return res.status(400).json({ error: 'No file uploaded' });
   const isAvatar = req.body.isAvatar === 'true';
   const folder = isAvatar ? 'avatars' : 'media';
   const fileUrl = `/uploads/${folder}/${req.file.filename}`;
-  
-  // Detect file type from mimetype
-  let fileType = 'file'; // default: generic file/document
+  let fileType = 'file';
   const mime = req.file.mimetype || '';
   if (mime.startsWith('image')) fileType = 'image';
   else if (mime.startsWith('video')) fileType = 'video';
@@ -113,34 +120,22 @@ app.post('/api/upload', upload.single('file'), (req, res) => {
   else if (mime.includes('sheet') || mime.includes('excel')) fileType = 'spreadsheet';
   else if (mime.includes('presentation') || mime.includes('powerpoint')) fileType = 'presentation';
   else if (mime.includes('zip') || mime.includes('rar') || mime.includes('tar') || mime.includes('compressed')) fileType = 'archive';
-  
   res.json({ url: fileUrl, type: fileType, originalName: req.file.originalname, size: req.file.size });
 });
 
-// Mark-Read API: Marks all unread messages from a sender as 'read'
+// Mark-Read API
 app.post('/api/messages/mark-read', (req, res) => {
   try {
     const { senderId, receiverId } = req.body;
     if (!senderId || !receiverId) return res.status(400).json({ error: 'senderId and receiverId are required.' });
-
-    // Get IDs of messages that will be updated (for socket notification)
     const unreadMsgs = getUnreadMessages.all(senderId, receiverId, 'read');
     const messageIds = unreadMsgs.map(m => m.id);
-
     if (messageIds.length === 0) return res.json({ updated: 0 });
-
-    // Bulk update in DB
     markMessagesRead.run('read', senderId, receiverId, 'read');
-
-    // Emit socket event to the sender so their UI updates instantly
     const senderSocket = Array.from(activeSockets.values()).find(u => u.id.toString() === senderId.toString());
     if (senderSocket) {
-      io.to(senderSocket.socketId).emit('messages_read_bulk', {
-        chatId: receiverId,
-        messageIds: messageIds
-      });
+      io.to(senderSocket.socketId).emit('messages_read_bulk', { chatId: receiverId, messageIds });
     }
-
     res.json({ updated: messageIds.length });
   } catch(err) {
     console.error('Mark-read error:', err);
@@ -148,6 +143,7 @@ app.post('/api/messages/mark-read', (req, res) => {
   }
 });
 
+// Auth routes
 app.post('/api/auth/register', async (req, res) => {
   try {
     const { name, email, password } = req.body;
@@ -157,7 +153,7 @@ app.post('/api/auth/register', async (req, res) => {
     const newId = Date.now().toString() + Math.random().toString(36).substr(2, 9);
     const avatar = 'https://i.pravatar.cc/150?u=' + email;
     insertUser.run(newId, email, hashedPassword, name, avatar, Date.now());
-    res.json({ token: jwt.sign({ id: newId }, JWT_SECRET, { expiresIn: '7d' }), user: { id: newId, name, email, avatar } });
+    res.json({ token: jwt.sign({ id: newId }, JWT_SECRET, { expiresIn: '30d' }), user: { id: newId, name, email, avatar } });
   } catch(err) { res.status(500).json({ error: 'Sunucu hatası.' }); }
 });
 
@@ -167,7 +163,7 @@ app.post('/api/auth/login', async (req, res) => {
     const user = getUserByEmail.get(email);
     if (!user) return res.status(400).json({ error: 'Kullanıcı bulunamadı.' });
     if (!(await bcrypt.compare(password, user.password))) return res.status(400).json({ error: 'Geçersiz şifre.' });
-    res.json({ token: jwt.sign({ id: user.id }, JWT_SECRET, { expiresIn: '7d' }), user: { id: user.id, name: user.name, email: user.email, avatar: user.avatar } });
+    res.json({ token: jwt.sign({ id: user.id }, JWT_SECRET, { expiresIn: '30d' }), user: { id: user.id, name: user.name, email: user.email, avatar: user.avatar } });
   } catch(err) { res.status(500).json({ error: 'Sunucu hatası.' }); }
 });
 
@@ -205,9 +201,8 @@ app.post('/api/auth/update_profile', async (req, res) => {
 
 // ===== ADMIN PANEL API =====
 const ADMIN_EMAIL = 'admin@eemessage.com';
-const ADMIN_PASSWORD = 'admin123'; // Üretimde değiştirin!
+const ADMIN_PASSWORD = 'admin123';
 
-// Admin login
 app.post('/api/admin/login', async (req, res) => {
   const { email, password } = req.body;
   if (email === ADMIN_EMAIL && password === ADMIN_PASSWORD) {
@@ -217,7 +212,6 @@ app.post('/api/admin/login', async (req, res) => {
   res.status(401).json({ error: 'Geçersiz admin bilgileri.' });
 });
 
-// Admin auth middleware
 const adminAuth = (req, res, next) => {
   try {
     const token = req.headers.authorization?.split(' ')[1];
@@ -228,7 +222,6 @@ const adminAuth = (req, res, next) => {
   } catch(e) { res.status(401).json({ error: 'Geçersiz token.' }); }
 };
 
-// Dashboard stats
 app.get('/api/admin/stats', adminAuth, (req, res) => {
   const totalUsers = db.prepare('SELECT COUNT(*) as count FROM users').get().count;
   const totalMessages = db.prepare('SELECT COUNT(*) as count FROM messages').get().count;
@@ -239,7 +232,6 @@ app.get('/api/admin/stats', adminAuth, (req, res) => {
   res.json({ totalUsers, totalMessages, totalMedia, todayMessages, onlineUsers });
 });
 
-// List all users
 app.get('/api/admin/users', adminAuth, (req, res) => {
   const users = db.prepare('SELECT id, email, name, avatar, lastSeen FROM users').all();
   const activeUserIds = Array.from(activeSockets.values()).map(u => u.id.toString());
@@ -251,7 +243,6 @@ app.get('/api/admin/users', adminAuth, (req, res) => {
   res.json(usersWithStatus);
 });
 
-// Create user (admin)
 app.post('/api/admin/users', adminAuth, async (req, res) => {
   try {
     const { name, email, password } = req.body;
@@ -266,7 +257,6 @@ app.post('/api/admin/users', adminAuth, async (req, res) => {
   } catch(e) { res.status(500).json({ error: 'Sunucu hatası.' }); }
 });
 
-// Delete user
 app.delete('/api/admin/users/:id', adminAuth, (req, res) => {
   try {
     const user = getUserById.get(req.params.id);
@@ -277,25 +267,20 @@ app.delete('/api/admin/users/:id', adminAuth, (req, res) => {
   } catch(e) { res.status(500).json({ error: 'Sunucu hatası.' }); }
 });
 
-// List messages with filters
 app.get('/api/admin/messages', adminAuth, (req, res) => {
   const { userId, limit = 100, offset = 0 } = req.query;
   let query = 'SELECT m.*, su.name as senderName, su.email as senderEmail, ru.name as receiverName, ru.email as receiverEmail FROM messages m LEFT JOIN users su ON m.senderId = su.id LEFT JOIN users ru ON m.receiverId = ru.id';
   const params = [];
-  if (userId) {
-    query += ' WHERE m.senderId = ? OR m.receiverId = ?';
-    params.push(userId, userId);
-  }
+  if (userId) { query += ' WHERE m.senderId = ? OR m.receiverId = ?'; params.push(userId, userId); }
   query += ' ORDER BY m.createdAt DESC LIMIT ? OFFSET ?';
   params.push(parseInt(limit), parseInt(offset));
   const messages = db.prepare(query).all(...params);
-  const total = userId 
+  const total = userId
     ? db.prepare('SELECT COUNT(*) as count FROM messages WHERE senderId = ? OR receiverId = ?').get(userId, userId).count
     : db.prepare('SELECT COUNT(*) as count FROM messages').get().count;
   res.json({ messages, total });
 });
 
-// Delete message (admin)
 app.delete('/api/admin/messages/:id', adminAuth, (req, res) => {
   try {
     db.prepare('DELETE FROM messages WHERE id = ?').run(req.params.id);
@@ -303,66 +288,82 @@ app.delete('/api/admin/messages/:id', adminAuth, (req, res) => {
   } catch(e) { res.status(500).json({ error: 'Sunucu hatası.' }); }
 });
 
+// ===== UTILITY: build users_updated payload =====
 const activeSockets = new Map();
 
+function buildUsersPayload() {
+  const allDbUsers = getAllUsers.all();
+  const activeUserIds = Array.from(activeSockets.values()).map(u => u.id.toString());
+  return allDbUsers.map(u => ({
+    id: u.id.toString(),
+    name: u.name,
+    avatar: u.avatar,
+    online: activeUserIds.includes(u.id.toString()),
+    lastSeen: u.lastSeen,
+  }));
+}
+
+// ===== SOCKET.IO =====
 io.on('connection', (socket) => {
+  console.log('Socket connected:', socket.id);
+
   socket.on('register_user', (userData) => {
-    try {
-      if (userData && userData.id) {
-        updateUserLastSeen.run(Date.now(), userData.id.toString());
+    if (!userData || !userData.id) return;
+    const userId = userData.id.toString();
+
+    // Remove old socket entry for same user (reconnect case)
+    for (const [sid, u] of activeSockets.entries()) {
+      if (u.id.toString() === userId && sid !== socket.id) {
+        activeSockets.delete(sid);
       }
-    } catch(err) {
-      console.error('Update lastSeen error:', err);
     }
 
-    activeSockets.set(socket.id, { ...userData, socketId: socket.id, online: true });
-    
-    // Broadcast updated list
-    try {
-      const allDbUsers = getAllUsers.all();
-      const activeUserIds = Array.from(activeSockets.values()).map(u => u.id.toString());
-      
-      io.emit('users_updated', allDbUsers.map(u => ({
-        id: u.id.toString(), 
-        name: u.name, 
-        avatar: u.avatar, 
-        online: activeUserIds.includes(u.id.toString())
-      })));
+    try { updateUserLastSeen.run(Date.now(), userId); } catch(e) {}
 
-      const historyRows = getMessages.all();
+    activeSockets.set(socket.id, { ...userData, socketId: socket.id, online: true });
+
+    // Broadcast updated user list to ALL
+    io.emit('users_updated', buildUsersPayload());
+
+    // Send ONLY this user's message history (privacy + performance fix)
+    try {
+      const historyRows = getMessagesForUser.all(userId, userId);
       const history = historyRows.map(msg => ({
-         ...msg, 
-         isMedia: msg.isMedia === 1, 
-         deleted: msg.deleted === 1,
-         deletedBy: JSON.parse(msg.deletedBy || '[]')
+        ...msg,
+        isMedia: msg.isMedia === 1,
+        deleted: msg.deleted === 1,
+        deletedBy: JSON.parse(msg.deletedBy || '[]')
       }));
       socket.emit('chat_history', history);
     } catch(err) {
-      console.error('Fetch users/history error:', err);
+      console.error('Fetch history error:', err);
     }
   });
 
   socket.on('send_message', (msg) => {
-    insertMsg.run(
-      msg.id.toString(), msg.text, msg.senderId.toString(), msg.receiverId.toString(), 
-      msg.timestamp, msg.isMedia ? 1 : 0, msg.mediaUrl || null, msg.mediaType || null, 
-      0, Date.now(), 'sent', '[]'
-    );
-    
-    // Add default states for newly sent message
-    msg.status = 'sent';
-    msg.deletedBy = [];
+    try {
+      insertMsg.run(
+        msg.id.toString(), msg.text, msg.senderId.toString(), msg.receiverId.toString(),
+        msg.timestamp, msg.isMedia ? 1 : 0, msg.mediaUrl || null, msg.mediaType || null,
+        0, Date.now(), 'sent', '[]'
+      );
+    } catch(err) {
+      console.error('Insert message error:', err);
+      return;
+    }
+
+    const outMsg = { ...msg, status: 'sent', deletedBy: [] };
 
     const receiverSocket = Array.from(activeSockets.values()).find(u => u.id.toString() === msg.receiverId.toString());
     if (receiverSocket && receiverSocket.socketId !== socket.id) {
-      msg.status = 'delivered'; // Auto upgrade if online
+      outMsg.status = 'delivered';
       updateMessageStatus.run('delivered', msg.id.toString());
-      io.to(receiverSocket.socketId).emit('receive_message', msg);
+      io.to(receiverSocket.socketId).emit('receive_message', { ...outMsg, status: 'delivered' });
     }
-    socket.emit('receive_message', msg);
+    // Echo back to sender with final status
+    socket.emit('receive_message', outMsg);
   });
 
-  // message status updates
   socket.on('update_message_status', ({ messageId, status, senderId }) => {
     updateMessageStatus.run(status, messageId);
     const senderSocket = Array.from(activeSockets.values()).find(u => u.id.toString() === senderId.toString());
@@ -374,71 +375,58 @@ io.on('connection', (socket) => {
   socket.on('clear_chat', (contactId) => {
     const user = activeSockets.get(socket.id);
     if (!user) return;
-    
-    // Soft delete: add user to deletedBy array of all messages between them
     const msgs = getMessagesBetween.all(user.id.toString(), contactId.toString(), contactId.toString(), user.id.toString());
     msgs.forEach(m => {
-       let dba = JSON.parse(m.deletedBy || '[]');
-       if (!dba.includes(user.id.toString())) {
-         dba.push(user.id.toString());
-         updateDeletedBy.run(JSON.stringify(dba), m.id);
-       }
+      let dba = JSON.parse(m.deletedBy || '[]');
+      if (!dba.includes(user.id.toString())) {
+        dba.push(user.id.toString());
+        updateDeletedBy.run(JSON.stringify(dba), m.id);
+      }
     });
-
     socket.emit('chat_cleared', contactId.toString());
   });
 
   socket.on('delete_for_me', ({ messageId, userId }) => {
     const msg = getMessageById.get(messageId);
     if (msg) {
-       let dba = JSON.parse(msg.deletedBy || '[]');
-       if (!dba.includes(userId.toString())) {
-         dba.push(userId.toString());
-         updateDeletedBy.run(JSON.stringify(dba), messageId);
-       }
-       socket.emit('message_deleted_for_me', { messageId, userId: userId.toString() });
+      let dba = JSON.parse(msg.deletedBy || '[]');
+      if (!dba.includes(userId.toString())) {
+        dba.push(userId.toString());
+        updateDeletedBy.run(JSON.stringify(dba), messageId);
+      }
+      socket.emit('message_deleted_for_me', { messageId, userId: userId.toString() });
     }
   });
 
   socket.on('delete_message', (messageId) => {
-    // Delete for everyone
     const msg = getMessageById.get(messageId);
     if (msg) {
       updateMessageDeleted.run('🚫 Bu mesaj silindi.', messageId);
       const updateData = { id: messageId.toString(), deleted: true, text: '🚫 Bu mesaj silindi.' };
-      
       const senderSocket = Array.from(activeSockets.values()).find(u => u.id.toString() === msg.senderId.toString());
       const receiverSocket = Array.from(activeSockets.values()).find(u => u.id.toString() === msg.receiverId.toString());
-      
       if (senderSocket) io.to(senderSocket.socketId).emit('message_deleted', updateData);
       if (receiverSocket) io.to(receiverSocket.socketId).emit('message_deleted', updateData);
     }
   });
 
   socket.on('update_profile', (data) => {
-    const active = Array.from(activeSockets.values()).find(u => u.id.toString() === data.id.toString());
+    const active = activeSockets.get(socket.id);
     if (active) { active.name = data.name; active.avatar = data.avatar; }
-    const allDbUsers = getAllUsers.all();
-    const activeUserIds = Array.from(activeSockets.values()).map(u => u.id.toString());
-    io.emit('users_updated', allDbUsers.map(u => ({
-      id: u.id.toString(), name: u.name, avatar: u.avatar, online: activeUserIds.includes(u.id.toString())
-    })));
+    io.emit('users_updated', buildUsersPayload());
   });
 
-  socket.on('disconnect', () => {
+  socket.on('disconnect', (reason) => {
+    console.log('Socket disconnected:', socket.id, reason);
     const user = activeSockets.get(socket.id);
     if (user) {
-      updateUserLastSeen.run(Date.now(), user.id);
+      try { updateUserLastSeen.run(Date.now(), user.id); } catch(e) {}
       activeSockets.delete(socket.id);
-      const allDbUsers = getAllUsers.all();
-      const activeUserIds = Array.from(activeSockets.values()).map(u => u.id.toString());
-      io.emit('users_updated', allDbUsers.map(u => ({
-        id: u.id.toString(), name: u.name, avatar: u.avatar, online: activeUserIds.includes(u.id.toString())
-      })));
+      io.emit('users_updated', buildUsersPayload());
     }
   });
 
-  // ===== WebRTC Signaling Events =====
+  // ===== WebRTC Signaling =====
   socket.on('callUser', ({ userToCall, signalData, from, name, callType }) => {
     const targetSocket = Array.from(activeSockets.values()).find(u => u.id.toString() === userToCall.toString());
     if (targetSocket) {
@@ -470,5 +458,5 @@ io.on('connection', (socket) => {
 
 const PORT = 3010;
 server.listen(PORT, () => {
-  console.log(`Socket.IO Server running on port ${PORT}`);
+  console.log(`EEMessage Server running on port ${PORT}`);
 });
