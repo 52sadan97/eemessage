@@ -79,6 +79,15 @@ const CallManager = forwardRef(({ socket, currentUser, contacts }, ref) => {
     }
   }, [callState]);
 
+  // Sync native audio mode when call starts
+  useEffect(() => {
+    if (callState === 'active') {
+      if (window.AndroidAudio && typeof window.AndroidAudio.setSpeakerphoneOn === 'function') {
+        window.AndroidAudio.setSpeakerphoneOn(isSpeaker);
+      }
+    }
+  }, [callState, isSpeaker]);
+
   // ===== Cleanup =====
   const cleanup = useCallback(() => {
     console.log('[Call] Cleaning up...');
@@ -171,17 +180,22 @@ const CallManager = forwardRef(({ socket, currentUser, contacts }, ref) => {
     pc.ontrack = (event) => {
       console.log('[Call] *** Got remote track:', event.track.kind, 'readyState:', event.track.readyState);
       
-      if (!remoteStreamRef.current) {
-        remoteStreamRef.current = new MediaStream();
+      if (event.streams && event.streams[0]) {
+        // Use the first stream provided which usually contains all tracks
+        remoteStreamRef.current = event.streams[0];
+      } else {
+        // Fallback: manually manage stream
+        if (!remoteStreamRef.current) {
+          remoteStreamRef.current = new MediaStream();
+        }
+        remoteStreamRef.current.addTrack(event.track);
       }
-      remoteStreamRef.current.addTrack(event.track);
-      
-      // Immediately attach to audio element (always available)
+
+      // Re-bind to elements immediately
       if (remoteAudioRef.current) {
         remoteAudioRef.current.srcObject = remoteStreamRef.current;
         remoteAudioRef.current.play().catch(e => console.warn('[Audio] Autoplay blocked:', e));
       }
-      // Attach to video element if available
       if (remoteVideoRef.current) {
         remoteVideoRef.current.srcObject = remoteStreamRef.current;
       }

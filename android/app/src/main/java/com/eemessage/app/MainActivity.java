@@ -3,9 +3,12 @@ package com.eemessage.app;
 import android.Manifest;
 import android.content.Context;
 import android.content.pm.PackageManager;
+import android.media.AudioAttributes;
+import android.media.AudioFocusRequest;
 import android.media.AudioManager;
 import android.os.Build;
 import android.os.Bundle;
+import android.util.Log;
 import android.webkit.JavascriptInterface;
 import android.webkit.PermissionRequest;
 import android.webkit.WebChromeClient;
@@ -18,6 +21,7 @@ import java.util.ArrayList;
 import java.util.List;
 
 public class MainActivity extends BridgeActivity {
+    private static final String TAG = "EEMessageNative";
     private static final int PERMISSION_REQUEST_CODE = 100;
     private AudioManager audioManager;
 
@@ -54,9 +58,32 @@ public class MainActivity extends BridgeActivity {
         @JavascriptInterface
         public void setSpeakerphoneOn(boolean on) {
             MainActivity.this.runOnUiThread(() -> {
-                if (audioManager != null) {
+                if (audioManager == null) return;
+                try {
+                    Log.d(TAG, "Setting speakerphone to: " + on);
+                    
+                    // 1. Request Audio Focus (Communication mode)
+                    if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.O) {
+                        AudioFocusRequest focusRequest = new AudioFocusRequest.Builder(AudioManager.AUDIOFOCUS_GAIN)
+                                .setAudioAttributes(new AudioAttributes.Builder()
+                                        .setUsage(AudioAttributes.USAGE_VOICE_COMMUNICATION)
+                                        .setContentType(AudioAttributes.CONTENT_TYPE_SPEECH)
+                                        .build())
+                                .build();
+                        audioManager.requestAudioFocus(focusRequest);
+                    } else {
+                        audioManager.requestAudioFocus(null, AudioManager.STREAM_VOICE_CALL, AudioManager.AUDIOFOCUS_GAIN);
+                    }
+
+                    // 2. Set Mode - Crucial for routing to earpiece
                     audioManager.setMode(AudioManager.MODE_IN_COMMUNICATION);
+                    
+                    // 3. Toggle Speaker
                     audioManager.setSpeakerphoneOn(on);
+                    
+                    Log.d(TAG, "Audio mode set to COMM + Speaker: " + on);
+                } catch (Exception e) {
+                    Log.e(TAG, "Error setting audio mode", e);
                 }
             });
         }
