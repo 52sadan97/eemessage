@@ -121,14 +121,21 @@ const CallManager = forwardRef(({ socket, currentUser, contacts }, ref) => {
     const newSpeaker = !isSpeaker;
     setIsSpeaker(newSpeaker);
     
-    // Experimental: try to set sinkId on remote elements
+    // Call Native Android Audio Bridge
+    if (window.AndroidAudio && typeof window.AndroidAudio.setSpeakerphoneOn === 'function') {
+      try {
+        window.AndroidAudio.setSpeakerphoneOn(newSpeaker);
+        console.log('[Audio] Native speaker toggle:', newSpeaker);
+      } catch (e) {
+        console.error('[Audio] Native toggle error:', e);
+      }
+    }
+
+    // Fallback/Experimental: try to set sinkId on remote elements
     try {
       const audio = remoteAudioRef.current;
-      const video = remoteVideoRef.current;
       if (audio && typeof audio.setSinkId === 'function') {
-        // This is a simplified approach; in a real scenario, we'd need to find specific device IDs
-        // But for many WebViews, simply toggling might trigger OS-level changes or we can use custom plugins if needed.
-        console.log('[Audio] Toggling speaker:', newSpeaker);
+        console.log('[Audio] Web sinkId toggle (ref):', newSpeaker);
       }
     } catch(e) {
       console.warn('[Audio] setSinkId error:', e);

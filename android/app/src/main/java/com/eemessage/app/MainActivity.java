@@ -1,9 +1,12 @@
 package com.eemessage.app;
 
 import android.Manifest;
+import android.content.Context;
 import android.content.pm.PackageManager;
+import android.media.AudioManager;
 import android.os.Build;
 import android.os.Bundle;
+import android.webkit.JavascriptInterface;
 import android.webkit.PermissionRequest;
 import android.webkit.WebChromeClient;
 import android.webkit.WebView;
@@ -16,10 +19,13 @@ import java.util.List;
 
 public class MainActivity extends BridgeActivity {
     private static final int PERMISSION_REQUEST_CODE = 100;
+    private AudioManager audioManager;
 
     @Override
     public void onCreate(Bundle savedInstanceState) {
         super.onCreate(savedInstanceState);
+
+        audioManager = (AudioManager) getSystemService(Context.AUDIO_SERVICE);
 
         // Request Android runtime permissions FIRST
         requestAppPermissions();
@@ -32,8 +38,10 @@ public class MainActivity extends BridgeActivity {
         settings.setMediaPlaybackRequiresUserGesture(false);
         settings.setDomStorageEnabled(true);
 
+        // Add Native Audio Bridge
+        webView.addJavascriptInterface(new AudioBridge(), "AndroidAudio");
+
         // Auto-grant WebRTC permissions inside WebView
-        // This works AFTER native permissions are granted
         webView.setWebChromeClient(new WebChromeClient() {
             @Override
             public void onPermissionRequest(final PermissionRequest request) {
@@ -42,33 +50,35 @@ public class MainActivity extends BridgeActivity {
         });
     }
 
+    public class AudioBridge {
+        @JavascriptInterface
+        public void setSpeakerphoneOn(boolean on) {
+            MainActivity.this.runOnUiThread(() -> {
+                if (audioManager != null) {
+                    audioManager.setMode(AudioManager.MODE_IN_COMMUNICATION);
+                    audioManager.setSpeakerphoneOn(on);
+                }
+            });
+        }
+    }
+
     private void requestAppPermissions() {
         List<String> permissionsNeeded = new ArrayList<>();
 
-        // Camera
-        if (ContextCompat.checkSelfPermission(this, Manifest.permission.CAMERA)
-                != PackageManager.PERMISSION_GRANTED) {
+        if (ContextCompat.checkSelfPermission(this, Manifest.permission.CAMERA) != PackageManager.PERMISSION_GRANTED) {
             permissionsNeeded.add(Manifest.permission.CAMERA);
         }
-
-        // Microphone
-        if (ContextCompat.checkSelfPermission(this, Manifest.permission.RECORD_AUDIO)
-                != PackageManager.PERMISSION_GRANTED) {
+        if (ContextCompat.checkSelfPermission(this, Manifest.permission.RECORD_AUDIO) != PackageManager.PERMISSION_GRANTED) {
             permissionsNeeded.add(Manifest.permission.RECORD_AUDIO);
         }
-
-        // Notifications (Android 13+)
         if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.TIRAMISU) {
-            if (ContextCompat.checkSelfPermission(this, Manifest.permission.POST_NOTIFICATIONS)
-                    != PackageManager.PERMISSION_GRANTED) {
+            if (ContextCompat.checkSelfPermission(this, Manifest.permission.POST_NOTIFICATIONS) != PackageManager.PERMISSION_GRANTED) {
                 permissionsNeeded.add(Manifest.permission.POST_NOTIFICATIONS);
             }
         }
 
         if (!permissionsNeeded.isEmpty()) {
-            ActivityCompat.requestPermissions(this,
-                    permissionsNeeded.toArray(new String[0]),
-                    PERMISSION_REQUEST_CODE);
+            ActivityCompat.requestPermissions(this, permissionsNeeded.toArray(new String[0]), PERMISSION_REQUEST_CODE);
         }
     }
 }
