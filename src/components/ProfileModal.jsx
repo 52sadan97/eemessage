@@ -21,6 +21,20 @@ const ProfileModal = ({ isOpen, onClose, currentUser, onSave }) => {
   // ====== APK: Capacitor Camera API ======
   const handleAvatarNative = async (source) => {
     try {
+      // Her zaman izin iste — izin varsa anında geçer, yoksa dialog açılır
+      const perms = await CapCamera.requestPermissions({ permissions: ['camera', 'photos'] });
+      const cameraOk = perms.camera === 'granted';
+      const photosOk = perms.photos === 'granted';
+
+      if (source === CameraSource.Camera && !cameraOk) {
+        alert('Kamera izni gerekli. Lütfen uygulama ayarlarından izin verin.');
+        return;
+      }
+      if (source === CameraSource.Photos && !photosOk) {
+        alert('Galeri izni gerekli. Lütfen uygulama ayarlarından izin verin.');
+        return;
+      }
+
       const photo = await CapCamera.getPhoto({
         quality: 85,
         allowEditing: false,

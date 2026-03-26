@@ -10,6 +10,7 @@ import ChatArea from './components/ChatArea';
 import Auth from './components/Auth';
 import CallManager from './components/CallManager';
 import AdminPanel from './components/AdminPanel';
+import PermissionSetup from './components/PermissionSetup';
 import './App.css';
 
 const socket = io(API_URL, {
@@ -24,6 +25,7 @@ export { socket };
 function App() {
   const [currentUser, setCurrentUser] = useState(null);
   const [isInitializing, setIsInitializing] = useState(true);
+  const [permissionsReady, setPermissionsReady] = useState(false);
   const [selectedContactId, setSelectedContactId] = useState(null);
   const [theme, setTheme] = useState(() => localStorage.getItem('eemessage_theme') || 'light');
   const [contacts, setContacts] = useState([]);
@@ -325,6 +327,8 @@ function App() {
   if (isInitializing) return <div className="loading-screen">EEMessage Başlatılıyor...</div>;
   if (!currentUser) return <Auth onLogin={setCurrentUser} />;
   if (window.location.hash === '#/admin') return <AdminPanel />;
+  // Show permission setup screen on native APK (only once after first install)
+  if (!permissionsReady) return <PermissionSetup onDone={() => setPermissionsReady(true)} />;
 
   return (
     <div className={`app-container ${selectedContactId ? 'chat-active' : 'sidebar-active'}`}>
