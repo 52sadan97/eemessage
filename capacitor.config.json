@@ -10,7 +10,7 @@
     "LocalNotifications": {
       "smallIcon": "ic_stat_icon",
       "iconColor": "#00a884",
-      "sound": "notification.wav"
+      "sound": "notification.mp3"
     },
     "PushNotifications": {
       "presentationOptions": ["badge", "sound", "alert"]

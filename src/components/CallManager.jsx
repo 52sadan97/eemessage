@@ -26,12 +26,33 @@ const CallManager = forwardRef(({ socket, currentUser, contacts }, ref) => {
   const localVideoRef = useRef(null);
   const remoteVideoRef = useRef(null);
   const remoteAudioRef = useRef(null); // For audio-only calls
+  const ringtoneRef = useRef(null); // Ringtone audio
   const timerRef = useRef(null);
   const callTimeoutRef = useRef(null);
   const callStateRef = useRef('idle');
   const pendingCandidatesRef = useRef([]);
   const hasRemoteDescRef = useRef(false);
   const incomingOfferRef = useRef(null); // Store incoming offer separately
+
+  // ===== Ringtone helpers =====
+  const playRingtone = useCallback(() => {
+    try {
+      if (!ringtoneRef.current) {
+        ringtoneRef.current = new Audio('/ringtone.mp3');
+        ringtoneRef.current.loop = true;
+        ringtoneRef.current.volume = 1.0;
+      }
+      ringtoneRef.current.currentTime = 0;
+      ringtoneRef.current.play().catch(e => console.warn('[Ring] Autoplay blocked:', e));
+    } catch(e) { console.warn('[Ring] Error:', e); }
+  }, []);
+
+  const stopRingtone = useCallback(() => {
+    if (ringtoneRef.current) {
+      ringtoneRef.current.pause();
+      ringtoneRef.current.currentTime = 0;
+    }
+  }, []);
 
   useEffect(() => { callStateRef.current = callState; }, [callState]);
 
@@ -55,6 +76,7 @@ const CallManager = forwardRef(({ socket, currentUser, contacts }, ref) => {
   // ===== Cleanup =====
   const cleanup = useCallback(() => {
     console.log('[Call] Cleaning up...');
+    stopRingtone();
     if (peerConnectionRef.current) {
       try { peerConnectionRef.current.close(); } catch(e) {}
       peerConnectionRef.current = null;
@@ -74,7 +96,7 @@ const CallManager = forwardRef(({ socket, currentUser, contacts }, ref) => {
     setCallDuration(0);
     setIsMuted(false);
     setIsCamOff(false);
-  }, []);
+  }, [stopRingtone]);
 
   const sendMissedCallMessage = useCallback((contactId, type) => {
     if (!socket || !currentUser) return;
@@ -201,6 +223,7 @@ const CallManager = forwardRef(({ socket, currentUser, contacts }, ref) => {
       const partner = contacts.find(c => c.id.toString() === from.toString());
       setCallPartner(partner || { id: from, name: name || 'Bilinmeyen', avatar: '' });
       setCallState('incoming');
+      playRingtone(); // 🔔 Play ringtone
     };
 
     const handleCallAccepted = async ({ signal }) => {
@@ -251,7 +274,7 @@ const CallManager = forwardRef(({ socket, currentUser, contacts }, ref) => {
       socket.off('callEnded', handleCallEnded);
       socket.off('ice-candidate', handleIceCandidate);
     };
-  }, [socket, contacts, cleanup, processPendingCandidates]);
+  }, [socket, contacts, cleanup, processPendingCandidates, playRingtone]);
 
   // ===== Start call (caller) =====
   const startCall = useCallback(async (contactId, type) => {
@@ -307,7 +330,8 @@ const CallManager = forwardRef(({ socket, currentUser, contacts }, ref) => {
   // ===== Answer call (callee) =====
   const answerCall = useCallback(async () => {
     if (!callPartner) return;
-    const offer = incomingOfferRef.current; // Get offer from dedicated ref
+    stopRingtone(); // 🔕 Stop ringtone on answer
+    const offer = incomingOfferRef.current;
     if (!offer) { console.error('[Call] No offer found!'); cleanup(); return; }
 
     try {
@@ -344,7 +368,7 @@ const CallManager = forwardRef(({ socket, currentUser, contacts }, ref) => {
       console.error('[Call] Answer failure:', err);
       cleanup();
     }
-  }, [callPartner, callType, socket, cleanup, createPeerConnection, processPendingCandidates]);
+  }, [callPartner, callType, socket, cleanup, createPeerConnection, processPendingCandidates, stopRingtone]);
 
   const rejectCall = useCallback(() => {
     if (callPartner) socket.emit('callEnded', { to: callPartner.id });
