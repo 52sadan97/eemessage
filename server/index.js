@@ -114,16 +114,28 @@ async function sendPushNotification(userId, title, body, data = {}) {
   try {
     const tokens = getFcmTokensForUser.all(userId).map(r => r.token);
     if (tokens.length === 0) return;
+    console.log('[FCM] Sending notification to', userId, '- tokens:', tokens.length);
 
     const message = {
       notification: { title, body },
-      data: { ...data, click_action: 'FLUTTER_NOTIFICATION_CLICK' },
+      data: {
+        ...data,
+        title: title || '',
+        body: body || '',
+        click_action: 'OPEN_APP',
+      },
       android: {
         priority: 'high',
+        ttl: 86400000, // 24 hours
         notification: {
           channelId: 'eemessage_messages',
-          sound: 'default',
-          priority: 'high',
+          sound: 'notification',
+          priority: 'max',
+          visibility: 'public',
+          defaultSound: false,
+          defaultVibrateTimings: false,
+          vibrateTimingsMillis: [0, 250, 250, 250],
+          notificationCount: 1,
         },
       },
     };
@@ -138,11 +150,14 @@ async function sendPushNotification(userId, title, body, data = {}) {
     results.forEach((result, idx) => {
       if (result.status === 'rejected') {
         const err = result.reason;
+        console.warn('[FCM] Send failed for token:', tokens[idx]?.substring(0, 20), err?.code);
         if (err?.code === 'messaging/registration-token-not-registered' ||
             err?.code === 'messaging/invalid-registration-token') {
           console.log('[FCM] Removing invalid token:', tokens[idx].substring(0, 20));
           deleteFcmToken.run(tokens[idx]);
         }
+      } else {
+        console.log('[FCM] Sent successfully:', result.value);
       }
     });
   } catch(err) {

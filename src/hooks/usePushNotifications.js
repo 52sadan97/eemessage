@@ -48,8 +48,8 @@ export default function usePushNotifications(currentUser) {
             name: 'EEMessage Bildirimleri',
             description: 'Mesaj ve arama bildirimleri',
             importance: 5, // MAX importance
-            visibility: 1, // PUBLIC
-            sound: 'default',
+            visibility: 1, // PUBLIC — show on lock screen
+            sound: 'notification', // uses res/raw/notification.mp3
             vibration: true,
             lights: true,
           });

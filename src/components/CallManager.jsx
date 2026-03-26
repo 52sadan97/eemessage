@@ -56,22 +56,27 @@ const CallManager = forwardRef(({ socket, currentUser, contacts }, ref) => {
 
   useEffect(() => { callStateRef.current = callState; }, [callState]);
 
-  // ===== Sync streams to video/audio elements when refs or state change =====
-  useEffect(() => {
-    if (localVideoRef.current && localStreamRef.current) {
-      localVideoRef.current.srcObject = localStreamRef.current;
+  // ===== Ref callbacks — attach srcObject when element mounts =====
+  const localVideoRefCb = useCallback((node) => {
+    localVideoRef.current = node;
+    if (node && localStreamRef.current) {
+      node.srcObject = localStreamRef.current;
     }
-  }, [callState, callType]);
+  }, [callState]); // re-run when state changes
 
-  useEffect(() => {
-    if (remoteVideoRef.current && remoteStreamRef.current) {
-      remoteVideoRef.current.srcObject = remoteStreamRef.current;
+  const remoteVideoRefCb = useCallback((node) => {
+    remoteVideoRef.current = node;
+    if (node && remoteStreamRef.current) {
+      node.srcObject = remoteStreamRef.current;
     }
-    // Always keep remote audio element playing
+  }, [callState]);
+
+  // Always keep remote audio element synced
+  useEffect(() => {
     if (remoteAudioRef.current && remoteStreamRef.current) {
       remoteAudioRef.current.srcObject = remoteStreamRef.current;
     }
-  }, [callState, callType]);
+  }, [callState]);
 
   // ===== Cleanup =====
   const cleanup = useCallback(() => {
@@ -455,7 +460,7 @@ const CallManager = forwardRef(({ socket, currentUser, contacts }, ref) => {
 
         {/* Remote video — full screen background */}
         {callType === 'video' && callState === 'active' ? (
-          <video ref={remoteVideoRef} className="wa-remote-video" autoPlay playsInline />
+          <video ref={remoteVideoRefCb} className="wa-remote-video" autoPlay playsInline />
         ) : (
           <div className="wa-call-bg"></div>
         )}
@@ -488,7 +493,7 @@ const CallManager = forwardRef(({ socket, currentUser, contacts }, ref) => {
         {/* Local video PiP */}
         {callType === 'video' && (
           <div className="wa-local-pip">
-            <video ref={localVideoRef} autoPlay playsInline muted />
+            <video ref={localVideoRefCb} autoPlay playsInline muted />
           </div>
         )}
 
