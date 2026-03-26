@@ -46,6 +46,17 @@ function App() {
     localStorage.setItem('eemessage_theme', theme);
   }, [theme]);
 
+  // Handle auto-read when a contact is selected
+  useEffect(() => {
+    if (selectedContactId && currentUser) {
+      fetch(`${API_URL}/api/messages/mark-read`, {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ senderId: selectedContactId, receiverId: currentUser.id })
+      }).catch(e => console.error('[Read] Mark read error:', e));
+    }
+  }, [selectedContactId, currentUser]);
+
   // Initial Auth Check (Run only once)
   useEffect(() => {
     const token = localStorage.getItem('eemessage_token');

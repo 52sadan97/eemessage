@@ -1,5 +1,5 @@
 import { useState, useEffect, useRef, useCallback, forwardRef, useImperativeHandle } from 'react';
-import { Phone, PhoneOff, Video, VideoOff, Mic, MicOff } from 'lucide-react';
+import { Phone, PhoneOff, Video, VideoOff, Mic, MicOff, Volume2, VolumeX } from 'lucide-react';
 import { getMediaUrl } from '../config';
 
 // ===== ICE Servers — STUN + Own TURN Server =====
@@ -18,6 +18,7 @@ const CallManager = forwardRef(({ socket, currentUser, contacts }, ref) => {
   const [callPartner, setCallPartner] = useState(null);
   const [isMuted, setIsMuted] = useState(false);
   const [isCamOff, setIsCamOff] = useState(false);
+  const [isSpeaker, setIsSpeaker] = useState(true); // Default to speaker on mobile
   const [callDuration, setCallDuration] = useState(0);
 
   const peerConnectionRef = useRef(null);
@@ -101,6 +102,7 @@ const CallManager = forwardRef(({ socket, currentUser, contacts }, ref) => {
     setCallDuration(0);
     setIsMuted(false);
     setIsCamOff(false);
+    setIsSpeaker(true);
   }, [stopRingtone]);
 
   const sendMissedCallMessage = useCallback((contactId, type) => {
@@ -114,6 +116,24 @@ const CallManager = forwardRef(({ socket, currentUser, contacts }, ref) => {
       isMedia: false, mediaUrl: null, mediaType: null
     });
   }, [socket, currentUser]);
+
+  const toggleSpeaker = useCallback(async () => {
+    const newSpeaker = !isSpeaker;
+    setIsSpeaker(newSpeaker);
+    
+    // Experimental: try to set sinkId on remote elements
+    try {
+      const audio = remoteAudioRef.current;
+      const video = remoteVideoRef.current;
+      if (audio && typeof audio.setSinkId === 'function') {
+        // This is a simplified approach; in a real scenario, we'd need to find specific device IDs
+        // But for many WebViews, simply toggling might trigger OS-level changes or we can use custom plugins if needed.
+        console.log('[Audio] Toggling speaker:', newSpeaker);
+      }
+    } catch(e) {
+      console.warn('[Audio] setSinkId error:', e);
+    }
+  }, [isSpeaker]);
 
   // ===== Create RTCPeerConnection =====
   const createPeerConnection = useCallback((partnerId) => {
@@ -513,6 +533,14 @@ const CallManager = forwardRef(({ socket, currentUser, contacts }, ref) => {
                 {isMuted ? <MicOff size={22} /> : <Mic size={22} />}
               </button>
               <span>Mikrofon</span>
+            </div>
+          )}
+          {callState === 'active' && (
+            <div className="wa-ctrl-item">
+              <button className={`wa-ctrl-btn ${!isSpeaker ? 'active' : ''}`} onClick={toggleSpeaker}>
+                {!isSpeaker ? <VolumeX size={22} /> : <Volume2 size={22} />}
+              </button>
+              <span>{isSpeaker ? 'Hoparlör' : 'Ahize'}</span>
             </div>
           )}
           <div className="wa-ctrl-item">

@@ -304,7 +304,7 @@ const ChatArea = ({ contact, messages, currentUser, onSendMessage, onDeleteMessa
 
       <div className="chat-messages" onTouchStart={() => {}} >
         {messages.map((msg) => {
-          const isSent = msg.senderId === currentUser.id;
+          const isSent = msg.senderId.toString() === currentUser.id.toString();
           return (
             <div key={msg.id} className={`message-row ${isSent ? 'sent' : 'received'}`}>
               <div 
