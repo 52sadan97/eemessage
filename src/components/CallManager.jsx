@@ -129,25 +129,56 @@ const CallManager = forwardRef(({ socket, currentUser, contacts }, ref) => {
 
   // ===== Get media stream with fallback =====
   const getMediaStream = async (type) => {
+    // Ensure mediaDevices is available
+    if (!navigator.mediaDevices || !navigator.mediaDevices.getUserMedia) {
+      alert('Bu cihaz kamera/mikrofon desteklemiyor!');
+      throw new Error('getUserMedia not supported');
+    }
+
     if (type === 'video') {
       try {
         console.log('[Media] Requesting video+audio...');
-        return await navigator.mediaDevices.getUserMedia({ video: true, audio: true });
+        return await navigator.mediaDevices.getUserMedia({
+          video: { facingMode: 'user', width: { ideal: 640 }, height: { ideal: 480 } },
+          audio: { echoCancellation: true, noiseSuppression: true }
+        });
       } catch (err) {
-        console.warn('[Media] Video failed, trying audio only...', err.name);
+        console.warn('[Media] Video+audio failed:', err.name, err.message);
+        // Fallback: try just video
         try {
-          const audioStream = await navigator.mediaDevices.getUserMedia({ audio: true, video: false });
-          setCallType('audio');
-          return audioStream;
-        } catch (err2) {
-          console.error('[Media] Audio also failed:', err2.name);
-          alert('Kamera veya mikrofon izni alınamadı! Hata: ' + err2.name);
-          throw err2;
+          console.log('[Media] Trying video only...');
+          const vidStream = await navigator.mediaDevices.getUserMedia({ video: true });
+          try {
+            const audioStream = await navigator.mediaDevices.getUserMedia({ audio: true });
+            audioStream.getAudioTracks().forEach(t => vidStream.addTrack(t));
+          } catch(e) {
+            console.warn('[Media] Audio track failed, video only');
+          }
+          return vidStream;
+        } catch(err2) {
+          console.warn('[Media] Video failed, trying audio only...', err2.name);
+          try {
+            const audioStream = await navigator.mediaDevices.getUserMedia({ audio: true });
+            setCallType('audio');
+            return audioStream;
+          } catch (err3) {
+            console.error('[Media] All media failed:', err3.name);
+            alert('Kamera veya mikrofon izni alınamadı!\n\nLütfen uygulama ayarlarından izinleri kontrol edin.\nHata: ' + err3.name);
+            throw err3;
+          }
         }
       }
     } else {
-      console.log('[Media] Requesting audio only...');
-      return await navigator.mediaDevices.getUserMedia({ audio: true, video: false });
+      try {
+        console.log('[Media] Requesting audio only...');
+        return await navigator.mediaDevices.getUserMedia({
+          audio: { echoCancellation: true, noiseSuppression: true }
+        });
+      } catch (err) {
+        console.error('[Media] Audio failed:', err.name);
+        alert('Mikrofon izni alınamadı!\n\nLütfen uygulama ayarlarından mikrofon iznini kontrol edin.\nHata: ' + err.name);
+        throw err;
+      }
     }
   };
 

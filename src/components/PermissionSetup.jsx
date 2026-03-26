@@ -1,6 +1,4 @@
 import { useState, useEffect } from 'react';
-import { Camera as CapCamera } from '@capacitor/camera';
-import { LocalNotifications } from '@capacitor/local-notifications';
 
 // Sadece native Capacitor ortamında çalışır
 const isNative = () => window?.Capacitor?.isNativePlatform?.() === true;
@@ -10,11 +8,18 @@ const PERMISSIONS = [
   {
     id: 'camera',
     icon: '📷',
-    title: 'Kamera ve Galeri',
-    description: 'Profil fotoğrafı güncellemek ve sohbette fotoğraf/video göndermek için gereklidir.',
+    title: 'Kamera',
+    description: 'Görüntülü arama ve fotoğraf çekmek için gereklidir.',
     request: async () => {
-      const r = await CapCamera.requestPermissions({ permissions: ['camera', 'photos'] });
-      return r.camera === 'granted' || r.photos === 'granted';
+      try {
+        // Direct getUserMedia for camera — works in both web and WebView
+        const stream = await navigator.mediaDevices.getUserMedia({ video: true });
+        stream.getTracks().forEach(t => t.stop());
+        return true;
+      } catch (err) {
+        console.warn('[Permission] Camera denied:', err.name);
+        return false;
+      }
     },
   },
   {
@@ -27,7 +32,8 @@ const PERMISSIONS = [
         const stream = await navigator.mediaDevices.getUserMedia({ audio: true });
         stream.getTracks().forEach(t => t.stop());
         return true;
-      } catch {
+      } catch (err) {
+        console.warn('[Permission] Microphone denied:', err.name);
         return false;
       }
     },
@@ -38,8 +44,24 @@ const PERMISSIONS = [
     title: 'Bildirimler',
     description: 'Yeni mesaj geldiğinde bildirim almak için gereklidir.',
     request: async () => {
-      const r = await LocalNotifications.requestPermissions();
-      return r.display === 'granted';
+      try {
+        if (isNative()) {
+          // For Android native — use Capacitor PushNotifications
+          const { PushNotifications } = await import('@capacitor/push-notifications');
+          const result = await PushNotifications.requestPermissions();
+          return result.receive === 'granted';
+        } else {
+          // Web — browser Notification API
+          if ('Notification' in window) {
+            const perm = await Notification.requestPermission();
+            return perm === 'granted';
+          }
+          return false;
+        }
+      } catch (err) {
+        console.warn('[Permission] Notification denied:', err);
+        return false;
+      }
     },
   },
 ];
@@ -49,12 +71,11 @@ export default function PermissionSetup({ onDone }) {
   const [results, setResults] = useState({});
   const [requesting, setRequesting] = useState(false);
 
-  // Sadece native'de ve daha önce sorulmadıysa göster
   const [visible, setVisible] = useState(false);
   useEffect(() => {
-    if (!isNative()) { onDone(); return; }
     const asked = localStorage.getItem(STORAGE_KEY);
     if (asked) { onDone(); return; }
+    // Show for both native and web (everyone needs permissions)
     setVisible(true);
   }, [onDone]);
 
@@ -96,7 +117,7 @@ export default function PermissionSetup({ onDone }) {
         {/* Progress dots */}
         <div style={styles.dots}>
           {PERMISSIONS.map((_, i) => (
-            <div key={i} style={{ ...styles.dot, background: i === step ? 'var(--brand-color, #00bfa5)' : 'rgba(255,255,255,0.2)' }} />
+            <div key={i} style={{ ...styles.dot, background: i === step ? 'var(--brand-color, #00bfa5)' : i < step ? '#4caf50' : 'rgba(255,255,255,0.2)' }} />
           ))}
         </div>
 
