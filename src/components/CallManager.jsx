@@ -2,18 +2,14 @@ import { useState, useEffect, useRef, useCallback, forwardRef, useImperativeHand
 import { Phone, PhoneOff, Video, VideoOff, Mic, MicOff } from 'lucide-react';
 import { getMediaUrl } from '../config';
 
-// ===== ICE Servers — STUN + Metered TURN (free tier) =====
+// ===== ICE Servers — STUN + Own TURN Server =====
 const ICE_SERVERS = [
   { urls: 'stun:stun.l.google.com:19302' },
   { urls: 'stun:stun1.l.google.com:19302' },
   { urls: 'stun:stun2.l.google.com:19302' },
-  { urls: 'stun:stun3.l.google.com:19302' },
-  { urls: 'stun:stun4.l.google.com:19302' },
-  // Metered TURN — replace with your own credentials for production
-  { urls: 'turn:a.relay.metered.ca:80', username: 'e8d3c5a0b9f1443d8a0e', credential: 'kP8xQ2wR5mN7vL3j' },
-  { urls: 'turn:a.relay.metered.ca:80?transport=tcp', username: 'e8d3c5a0b9f1443d8a0e', credential: 'kP8xQ2wR5mN7vL3j' },
-  { urls: 'turn:a.relay.metered.ca:443', username: 'e8d3c5a0b9f1443d8a0e', credential: 'kP8xQ2wR5mN7vL3j' },
-  { urls: 'turn:a.relay.metered.ca:443?transport=tcp', username: 'e8d3c5a0b9f1443d8a0e', credential: 'kP8xQ2wR5mN7vL3j' },
+  // Own coturn TURN server on VPS
+  { urls: 'turn:5.199.136.52:3478', username: 'eemessage', credential: 'EEm3ssag3Turn2026!' },
+  { urls: 'turn:5.199.136.52:3478?transport=tcp', username: 'eemessage', credential: 'EEm3ssag3Turn2026!' },
 ];
 
 const CallManager = forwardRef(({ socket, currentUser, contacts }, ref) => {
