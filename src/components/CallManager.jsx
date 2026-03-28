@@ -1,5 +1,9 @@
 import { useState, useEffect, useRef, useCallback, forwardRef, useImperativeHandle } from 'react';
-import { Phone, PhoneOff, Video, VideoOff, Mic, MicOff, Volume2, VolumeX } from 'lucide-react';
+import { 
+  Phone, PhoneOff, Video, VideoOff, Mic, MicOff, 
+  Volume2, VolumeX, ChevronDown, MoreVertical, X, 
+  ChevronLeft, ChevronRight 
+} from 'lucide-react';
 import { getMediaUrl } from '../config';
 
 // ===== ICE Servers — STUN + Own TURN Server =====
@@ -69,6 +73,7 @@ const CallManager = forwardRef(({ socket, currentUser, contacts }, ref) => {
     remoteVideoRef.current = node;
     if (node && remoteStreamRef.current) {
       node.srcObject = remoteStreamRef.current;
+      node.play().catch(e => console.warn('[Video] Play failed:', e));
     }
   }, [callState]);
 

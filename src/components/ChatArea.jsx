@@ -87,7 +87,10 @@ const ChatArea = ({ contact, messages, currentUser, onSendMessage, onDeleteMessa
           const res = await fetch(`${API_URL}/api/upload`, { method: 'POST', body: formData });
           const data = await res.json();
           if (data.url) onSendMessage({ text: '', receiverId: contact.id, isMedia: true, mediaUrl: data.url, mediaType: 'audio' });
-        } catch(err) { console.error(err); }
+        } catch(err) { 
+          console.error('[Upload] Audio failed:', err); 
+          alert('Ses mesajı yüklenemedi: ' + err.message);
+        }
       };
 
       mediaRecorder.start();
@@ -135,7 +138,8 @@ const ChatArea = ({ contact, messages, currentUser, onSendMessage, onDeleteMessa
         onSendMessage({ text: displayText, receiverId: contact.id, isMedia: true, mediaUrl: data.url, mediaType: data.type });
       }
     } catch(err) {
-      alert('Dosya yüklenemedi');
+      console.error('[Upload] File failed:', err);
+      alert('Dosya yüklenemedi: ' + err.message);
     } finally {
       e.target.value = ''; 
     }
@@ -328,25 +332,44 @@ const ChatArea = ({ contact, messages, currentUser, onSendMessage, onDeleteMessa
       </div>
 
       <div className="chat-input-wrapper">
-        <form className="chat-input-area-v2" onSubmit={handleSend}>
-          <div style={{ position: 'relative' }} ref={emojiPickerRef}>
-            <button type="button" className="icon-btn-v2" onClick={() => setShowEmojiPicker(!showEmojiPicker)}><Smile size={24} /></button>
-            {showEmojiPicker && <div className="emoji-picker-container"><EmojiPicker onEmojiClick={handleEmojiClick} /></div>}
-          </div>
-          <input type="text" placeholder="Mesaj" value={inputText} onChange={(e) => setInputText(e.target.value)} />
-          <input type="file" ref={fileInputRef} onChange={handleFileUpload} style={{display:'none'}} />
-          <button type="button" className="icon-btn-v2" onClick={() => fileInputRef.current?.click()}><Paperclip size={24} /></button>
-          <button type="button" className="icon-btn-v2" onClick={openCamera}><Camera size={24} /></button>
-        </form>
-        {isRecording ? (
-          <div className="recording-bar-v2">
-            <button type="button" className="rec-cancel-v2" onClick={cancelRecording}><X size={22} /></button>
-            <div className="rec-content-v2"><span>{Math.floor(recordingTimer / 60).toString().padStart(2, '0')}:{(recordingTimer % 60).toString().padStart(2, '0')}</span></div>
-            <button type="button" className="rec-send-v2" onClick={stopRecording}><Send size={22} /></button>
-          </div>
+        {!isRecording ? (
+          <>
+            <form className="chat-input-area-v2" onSubmit={handleSend}>
+              <div style={{ position: 'relative' }} ref={emojiPickerRef}>
+                <button type="button" className="icon-btn-v2" onClick={() => setShowEmojiPicker(!showEmojiPicker)}>
+                  <Smile size={24} />
+                </button>
+                {showEmojiPicker && <div className="emoji-picker-container"><EmojiPicker onEmojiClick={handleEmojiClick} /></div>}
+              </div>
+              <input type="text" placeholder="Mesaj" value={inputText} onChange={(e) => setInputText(e.target.value)} />
+              <input type="file" ref={fileInputRef} onChange={handleFileUpload} style={{display:'none'}} />
+              <button type="button" className="icon-btn-v2" onClick={() => fileInputRef.current?.click()}>
+                <Paperclip size={24} />
+              </button>
+              <button type="button" className="icon-btn-v2" onClick={openCamera}>
+                <Camera size={24} />
+              </button>
+            </form>
+            <div className="input-action-btn-wrapper">
+               {inputText.trim() ? (
+                 <button type="button" className="action-circle-btn send" onClick={handleSend}><Send size={24} /></button>
+               ) : (
+                 <button type="button" className="action-circle-btn mic" onClick={startRecording}><Mic size={24} /></button>
+               )}
+            </div>
+          </>
         ) : (
-          <div className="input-action-btn-wrapper">
-             {inputText.trim() ? <button type="button" className="action-circle-btn send" onClick={handleSend}><Send size={24} /></button> : <button type="button" className="action-circle-btn mic" onClick={startRecording}><Mic size={24} /></button>}
+          <div className="recording-bar-v2">
+            <button type="button" className="rec-cancel-v2" onClick={cancelRecording}>
+              <X size={22} />
+            </button>
+            <div className="rec-content-v2">
+              <div className="rec-pulse-v2"></div>
+              <span>{Math.floor(recordingTimer / 60).toString().padStart(2, '0')}:{(recordingTimer % 60).toString().padStart(2, '0')}</span>
+            </div>
+            <button type="button" className="rec-send-v2" onClick={stopRecording}>
+              <Send size={22} />
+            </button>
           </div>
         )}
       </div>
