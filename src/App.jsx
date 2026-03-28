@@ -415,7 +415,7 @@ function App() {
           onDeleteForMe={(id) => socket.emit('delete_for_me', { messageId: id, userId: currentUser.id })}
           onClearChat={(id) => { if(window.confirm('Bu sohbeti temizlemek istediğinize emin misiniz?')) socket.emit('clear_chat', id) }}
           onBack={() => setSelectedContactId(null)}
-          onStartCall={(type) => callManagerRef.current?.startCall(selectedContactId, type)}
+          onStartCall={(cid, type) => callManagerRef.current?.startCall(cid, type)}
           onAudioPlayed={(messageId, senderId) => {
             socket.emit('update_message_status', { messageId, status: 'read', senderId });
           }}

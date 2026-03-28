@@ -37,7 +37,10 @@ const ChatArea = ({ contact, messages, currentUser, onSendMessage, onDeleteMessa
   const recCancelledRef = useRef(false);
 
   useEffect(() => {
-    endOfMessagesRef.current?.scrollIntoView();
+    const scrollToBottom = () => endOfMessagesRef.current?.scrollIntoView({ behavior: 'smooth' });
+    scrollToBottom();
+    window.addEventListener('resize', scrollToBottom);
+    return () => window.removeEventListener('resize', scrollToBottom);
   }, [messages]);
 
   useEffect(() => {
@@ -85,6 +88,7 @@ const ChatArea = ({ contact, messages, currentUser, onSendMessage, onDeleteMessa
         formData.append('file', audioBlob, 'ses_mesaji.webm');
         try {
           const res = await fetch(`${API_URL}/api/upload`, { method: 'POST', body: formData });
+          if (!res.ok) throw new Error('Sunucu hatası: ' + res.status);
           const data = await res.json();
           if (data.url) onSendMessage({ text: '', receiverId: contact.id, isMedia: true, mediaUrl: data.url, mediaType: 'audio' });
         } catch(err) { 
@@ -131,6 +135,7 @@ const ChatArea = ({ contact, messages, currentUser, onSendMessage, onDeleteMessa
     formData.append('file', file);
     try {
       const res = await fetch(`${API_URL}/api/upload`, { method: 'POST', body: formData });
+      if (!res.ok) throw new Error('Sunucu hatası: ' + res.status);
       const data = await res.json();
       if (data.url) {
         const fileName = data.originalName || file.name;
@@ -336,13 +341,13 @@ const ChatArea = ({ contact, messages, currentUser, onSendMessage, onDeleteMessa
           <>
             <form className="chat-input-area-v2" onSubmit={handleSend}>
               <div style={{ position: 'relative' }} ref={emojiPickerRef}>
-                <button type="button" className="icon-btn-v2" onClick={() => setShowEmojiPicker(!showEmojiPicker)}>
+                <button type="button" className="icon-btn-v2 emoji-btn-mobile" onClick={() => setShowEmojiPicker(!showEmojiPicker)}>
                   <Smile size={24} />
                 </button>
                 {showEmojiPicker && <div className="emoji-picker-container"><EmojiPicker onEmojiClick={handleEmojiClick} /></div>}
               </div>
               <input type="text" placeholder="Mesaj" value={inputText} onChange={(e) => setInputText(e.target.value)} />
-              <input type="file" ref={fileInputRef} onChange={handleFileUpload} style={{display:'none'}} />
+              <input type="file" ref={fileInputRef} onChange={handleFileUpload} style={{display:'none'}} accept="image/*,video/*,application/*" />
               <button type="button" className="icon-btn-v2" onClick={() => fileInputRef.current?.click()}>
                 <Paperclip size={24} />
               </button>

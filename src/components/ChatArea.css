@@ -1180,15 +1180,17 @@
 
 .chat-input-wrapper {
   display: flex !important;
-  align-items: center;
+  align-items: flex-end; /* İçerik uzarsa butonlar altta kalsın */
   gap: 8px;
   padding: 8px 12px;
   background-color: var(--bg-panel);
   border-top: 1px solid var(--border-light);
+  width: 100%;
 }
 
 .chat-input-area-v2 {
-  flex: 1;
+  flex: 1; /* Kalan tüm boşluğu bu alsın, butonları itmesin */
+  min-width: 0;
   display: flex;
   align-items: center;
   background: var(--bg-message-own);
@@ -1206,6 +1208,7 @@
   font-size: 16px;
   color: var(--text-primary);
   outline: none;
+  min-width: 0;
 }
 
 .icon-btn-v2 {
@@ -1605,4 +1608,5 @@
 
 @media screen and (max-width: 768px) {
   .wa-nav-btn { display: none; } /* On mobile, use swipe (to be added) or thumbnails */
+  .emoji-btn-mobile { display: none !important; }
 }
