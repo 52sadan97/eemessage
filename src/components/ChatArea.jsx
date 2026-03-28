@@ -57,6 +57,8 @@ const ChatArea = ({ contact, messages, currentUser, onSendMessage, onDeleteMessa
 
   const handleEmojiClick = (emojiData) => {
     setInputText(prev => prev + emojiData.emoji);
+    // Emojiyi sectikten sonra kapatmak icin (Opsiyonel ama user tavsiyesi)
+    setShowEmojiPicker(false);
   };
 
   const handleSend = (e) => {
@@ -344,7 +346,11 @@ const ChatArea = ({ contact, messages, currentUser, onSendMessage, onDeleteMessa
                 <button type="button" className="icon-btn-v2 emoji-btn-mobile" onClick={() => setShowEmojiPicker(!showEmojiPicker)}>
                   <Smile size={24} />
                 </button>
-                {showEmojiPicker && <div className="emoji-picker-container"><EmojiPicker onEmojiClick={handleEmojiClick} /></div>}
+                {showEmojiPicker && (
+                  <div className="emoji-picker-container" style={{ position: 'absolute', bottom: '60px', left: '0', zIndex: 10000 }}>
+                    <EmojiPicker onEmojiClick={handleEmojiClick} theme="dark" />
+                  </div>
+                )}
               </div>
               <input type="text" placeholder="Mesaj" value={inputText} onChange={(e) => setInputText(e.target.value)} />
               <input type="file" ref={fileInputRef} onChange={handleFileUpload} style={{display:'none'}} accept="image/*,video/*,application/*" />

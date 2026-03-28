@@ -4,8 +4,8 @@
 $VPS_IP = "5.199.136.52"
 $REMOTE_PATH = "/opt/eemessage"
 $BASE_DIR = "C:\Users\ertu1\Desktop\eemessage"
-$LOCAL_APK_DEST = "$BASE_DIR\eemessage-debug.apk"
-$VPS_APK_DEST = "/root/eemessage-debug.apk"
+$LOCAL_APK_DEST = "$BASE_DIR\eemessage.apk"
+$VPS_APK_DEST = "/root/eemessage.apk"
 
 Write-Host ">>> Islem baslatiliyor..." -ForegroundColor Cyan
 
