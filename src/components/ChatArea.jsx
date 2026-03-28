@@ -1,6 +1,11 @@
 import { useRef, useEffect, useState } from 'react';
 import { API_URL, getMediaUrl } from '../config';
-import { Search, MoreVertical, Paperclip, Smile, Mic, Square, Send, ChevronDown, Check, CheckCheck, ArrowLeft, Phone, Video, Camera, FileText, Download, X } from 'lucide-react';
+import { 
+  Send, Smile, Paperclip, Mic, X, MoreVertical, 
+  Search, Phone, Video, ArrowLeft, 
+  Reply, Camera, Check, 
+  CheckCheck, Square, ChevronLeft, ChevronRight, FileText, Download
+} from 'lucide-react';
 import EmojiPicker from 'emoji-picker-react';
 import './ChatArea.css';
 
@@ -13,6 +18,8 @@ const ChatArea = ({ contact, messages, currentUser, onSendMessage, onDeleteMessa
   const [avatarPreview, setAvatarPreview] = useState(null);
   const [recordingTimer, setRecordingTimer] = useState(0);
   const [isCameraOpen, setIsCameraOpen] = useState(false);
+  const [mediaViewerOpen, setMediaViewerOpen] = useState(false);
+  const [selectedMedia, setSelectedMedia] = useState(null);
   const [isVideoRecording, setIsVideoRecording] = useState(false);
   const [videoTimer, setVideoTimer] = useState(0);
   const [facingMode, setFacingMode] = useState('environment');
@@ -33,7 +40,6 @@ const ChatArea = ({ contact, messages, currentUser, onSendMessage, onDeleteMessa
     endOfMessagesRef.current?.scrollIntoView();
   }, [messages]);
 
-  // Close emoji picker when clicking outside
   useEffect(() => {
     const handleClickOutside = (e) => {
       if (emojiPickerRef.current && !emojiPickerRef.current.contains(e.target)) {
@@ -72,7 +78,7 @@ const ChatArea = ({ contact, messages, currentUser, onSendMessage, onDeleteMessa
       mediaRecorder.onstop = async () => {
         if (recCancelledRef.current) {
           recCancelledRef.current = false;
-          return; // İptal edildi, gönderme
+          return;
         }
         const audioBlob = new Blob(audioChunksRef.current, { type: 'audio/webm' });
         const formData = new FormData();
@@ -135,7 +141,6 @@ const ChatArea = ({ contact, messages, currentUser, onSendMessage, onDeleteMessa
     }
   };
 
-  // ===== WhatsApp-style Camera =====
   const openCamera = async () => {
     try {
       const stream = await navigator.mediaDevices.getUserMedia({ 
@@ -230,20 +235,6 @@ const ChatArea = ({ contact, messages, currentUser, onSendMessage, onDeleteMessa
     }
   };
 
-  const formatFileSize = (bytes) => {
-    if (!bytes) return '';
-    if (bytes < 1024) return bytes + ' B';
-    if (bytes < 1024 * 1024) return (bytes / 1024).toFixed(1) + ' KB';
-    return (bytes / (1024 * 1024)).toFixed(1) + ' MB';
-  };
-
-  // Handle audio play event — mark as "read" for the sender
-  const handleAudioPlay = (msg) => {
-    if (!msg.deleted && msg.senderId !== currentUser.id && msg.status !== 'read') {
-      if (onAudioPlayed) onAudioPlayed(msg.id, msg.senderId);
-    }
-  };
-
   if (!contact) {
     return (
       <div className="chat-empty-state">
@@ -274,7 +265,6 @@ const ChatArea = ({ contact, messages, currentUser, onSendMessage, onDeleteMessa
             alt={contact.name} 
             className="avatar clickable-avatar" 
             onClick={() => setAvatarPreview({ src: getMediaUrl(contact.avatar), name: contact.name })}
-            title="Profil fotoğrafını büyüt"
           />
           <div className="contact-status">
             <h3>{contact.name}</h3>
@@ -282,17 +272,11 @@ const ChatArea = ({ contact, messages, currentUser, onSendMessage, onDeleteMessa
           </div>
         </div>
         <div className="chat-header-actions">
-          <button className="call-header-btn" onClick={() => onStartCall && onStartCall(contact.id, 'audio')} title="Sesli Arama">
-            <Phone size={20} />
-          </button>
-          <button className="call-header-btn" onClick={() => onStartCall && onStartCall(contact.id, 'video')} title="Görüntülü Arama">
-            <Video size={20} />
-          </button>
+          <button className="call-header-btn" onClick={() => onStartCall && onStartCall(contact.id, 'audio')}><Phone size={20} /></button>
+          <button className="call-header-btn" onClick={() => onStartCall && onStartCall(contact.id, 'video')}><Video size={20} /></button>
           <button className="icon-btn"><Search size={20} /></button>
           <div className="dropdown-container">
-            <button className="icon-btn" onClick={(e) => {e.stopPropagation(); setIsDropdownOpen(!isDropdownOpen)}} title="Menü">
-              <MoreVertical size={20} />
-            </button>
+            <button className="icon-btn" onClick={(e) => {e.stopPropagation(); setIsDropdownOpen(!isDropdownOpen)}}><MoreVertical size={20} /></button>
             {isDropdownOpen && (
               <div className="dropdown-menu">
                 <button onClick={() => { setIsDropdownOpen(false); onClearChat(contact.id); }}>Sohbeti Temizle</button>
@@ -302,7 +286,7 @@ const ChatArea = ({ contact, messages, currentUser, onSendMessage, onDeleteMessa
         </div>
       </div>
 
-      <div className="chat-messages" onTouchStart={() => {}} >
+      <div className="chat-messages">
         {messages.map((msg) => {
           const isSent = msg.senderId.toString() === currentUser.id.toString();
           return (
@@ -311,66 +295,30 @@ const ChatArea = ({ contact, messages, currentUser, onSendMessage, onDeleteMessa
                 className={`message-bubble ${isSent ? 'sent-bubble' : 'received-bubble'} ${msg.deleted ? 'deleted-bubble' : ''}`}
                 onMouseEnter={() => setActiveMsgOptions(msg.id)}
                 onMouseLeave={() => setActiveMsgOptions(null)}
-                onTouchStart={(e) => {
-                  const timer = setTimeout(() => {
-                    setActiveMsgOptions(msg.id);
-                    if (navigator.vibrate) navigator.vibrate(30);
-                  }, 500);
-                  e.currentTarget._longPressTimer = timer;
-                }}
-                onTouchEnd={(e) => {
-                  if (e.currentTarget._longPressTimer) clearTimeout(e.currentTarget._longPressTimer);
-                }}
-                onTouchMove={(e) => {
-                  if (e.currentTarget._longPressTimer) clearTimeout(e.currentTarget._longPressTimer);
-                }}
               >
                 {msg.isMedia && !msg.deleted ? (
-                  msg.mediaType === 'video' ? <video className="message-media" controls src={getMediaUrl(msg.mediaUrl)} />
-                  : msg.mediaType === 'audio' ? (
-                    <audio 
-                      className="message-audio" 
-                      controls 
-                      src={getMediaUrl(msg.mediaUrl)} 
-                      onPlay={() => {
-                        if (!isSent && msg.status !== 'read') onAudioPlayed?.(msg.id, msg.senderId);
-                      }}
-                    />
-                  )
-                  : msg.mediaType === 'image' ? <img className="message-media" src={getMediaUrl(msg.mediaUrl)} alt="medya" />
-                  : (
-                    /* PDF, document, archive, etc. */
-                    <a href={getMediaUrl(msg.mediaUrl)} target="_blank" rel="noopener noreferrer" className="file-attachment" download>
-                      <FileText size={32} />
-                      <div className="file-info">
-                        <span className="file-name">{msg.text || 'Dosya'}</span>
-                        <span className="file-action"><Download size={14} /> İndir</span>
-                      </div>
-                    </a>
-                  )
+                  <div className="message-media" onClick={() => { setSelectedMedia(msg); setMediaViewerOpen(true); }}>
+                    {msg.mediaType === 'video' ? <div className="media-overlay">▶</div> : null}
+                    {msg.mediaType === 'image' ? <img src={getMediaUrl(msg.mediaUrl)} alt="medya" />
+                    : msg.mediaType === 'video' ? <video src={getMediaUrl(msg.mediaUrl)} />
+                    : msg.mediaType === 'audio' ? <audio controls src={getMediaUrl(msg.mediaUrl)} onPlay={() => { if (!isSent && msg.status !== 'read') onAudioPlayed?.(msg.id, msg.senderId); }} />
+                    : <a href={getMediaUrl(msg.mediaUrl)} target="_blank" rel="noopener noreferrer" className="file-attachment" download><FileText size={32} /> {msg.text || 'Dosya'}</a>}
+                  </div>
                 ) : null}
                 
-                <span className="message-text" style={{ fontStyle: msg.deleted ? 'italic' : 'normal', color: msg.deleted ? 'var(--text-secondary)' : 'inherit' }}>
-                  {msg.text}
-                  {isSent && <span style={{display: 'inline-block', width: '60px', height: '10px'}}></span>}
-                </span>
-
+                <span className="message-text">{msg.text}</span>
                 <span className="message-meta">
                   {msg.timestamp}
                   {isSent && !msg.deleted && <span className="read-ticks">{renderStatusTicks(msg.status)}</span>}
                 </span>
 
-                {/* Msg Options — long press on mobile, hover on desktop */}
                 {!msg.deleted && activeMsgOptions === msg.id && (
-                  <>
-                    <div className="msg-options-backdrop" onClick={() => setActiveMsgOptions(null)} onTouchEnd={() => setActiveMsgOptions(null)}></div>
-                    <div className="msg-options-wrapper" onClick={(e) => e.stopPropagation()}>
-                      <div className="msg-dropdown">
+                  <div className="msg-options-wrapper">
+                    <div className="msg-dropdown">
                          {isSent && <button onClick={() => { onDeleteMessage(msg.id); setActiveMsgOptions(null); }}>🗑️ Herkesten Sil</button>}
                          <button onClick={() => { onDeleteForMe(msg.id); setActiveMsgOptions(null); }}>🚫 Benden Sil</button>
-                      </div>
                     </div>
-                  </>
+                  </div>
                 )}
               </div>
             </div>
@@ -380,122 +328,121 @@ const ChatArea = ({ contact, messages, currentUser, onSendMessage, onDeleteMessa
       </div>
 
       <div className="chat-input-wrapper">
-        <form className="chat-input-area-v2" onSubmit={handleSend} onClick={(e) => e.stopPropagation()}>
-          <div style={{ position: 'relative' }} ref={emojiPickerRef} className="desktop-only">
-            <button type="button" className="icon-btn-v2" onClick={(e) => { e.stopPropagation(); setShowEmojiPicker(prev => !prev); }}>
-              <Smile size={24} />
-            </button>
-            {showEmojiPicker && (
-              <div className="emoji-picker-container" onClick={(e) => e.stopPropagation()}>
-                <EmojiPicker 
-                  onEmojiClick={handleEmojiClick} 
-                  width={320} 
-                  height={400}
-                  searchDisabled={false}
-                  skinTonesDisabled
-                  previewConfig={{ showPreview: false }}
-                />
-              </div>
-            )}
+        <form className="chat-input-area-v2" onSubmit={handleSend}>
+          <div style={{ position: 'relative' }} ref={emojiPickerRef}>
+            <button type="button" className="icon-btn-v2" onClick={() => setShowEmojiPicker(!showEmojiPicker)}><Smile size={24} /></button>
+            {showEmojiPicker && <div className="emoji-picker-container"><EmojiPicker onEmojiClick={handleEmojiClick} /></div>}
           </div>
-
           <input type="text" placeholder="Mesaj" value={inputText} onChange={(e) => setInputText(e.target.value)} />
-
-          <input 
-            type="file" 
-            style={{ 
-              opacity: 0, 
-              position: 'absolute', 
-              width: 0, 
-              height: 0, 
-              pointerEvents: 'none' 
-            }} 
-            ref={fileInputRef} 
-            onChange={handleFileUpload} 
-            accept="*" 
-          />
-          <button type="button" className="icon-btn-v2" onClick={() => fileInputRef.current?.click()} title="Dosya Gönder">
-            <Paperclip size={24} />
-          </button>
-          
-          <button type="button" className="icon-btn-v2" onClick={openCamera} title="Kamera">
-            <Camera size={24} />
-          </button>
+          <input type="file" ref={fileInputRef} onChange={handleFileUpload} style={{display:'none'}} />
+          <button type="button" className="icon-btn-v2" onClick={() => fileInputRef.current?.click()}><Paperclip size={24} /></button>
+          <button type="button" className="icon-btn-v2" onClick={openCamera}><Camera size={24} /></button>
         </form>
-
         {isRecording ? (
           <div className="recording-bar-v2">
-            <button type="button" className="rec-cancel-v2" onClick={cancelRecording} title="İptal">
-              <X size={22} />
-            </button>
-            <div className="rec-content-v2">
-              <div className="rec-pulse-v2"></div>
-              <span className="rec-timer-v2">{Math.floor(recordingTimer / 60).toString().padStart(2, '0')}:{(recordingTimer % 60).toString().padStart(2, '0')}</span>
-            </div>
-            <button type="button" className="rec-send-v2" onClick={stopRecording} title="Gönder">
-              <Send size={22} />
-            </button>
+            <button type="button" className="rec-cancel-v2" onClick={cancelRecording}><X size={22} /></button>
+            <div className="rec-content-v2"><span>{Math.floor(recordingTimer / 60).toString().padStart(2, '0')}:{(recordingTimer % 60).toString().padStart(2, '0')}</span></div>
+            <button type="button" className="rec-send-v2" onClick={stopRecording}><Send size={22} /></button>
           </div>
         ) : (
           <div className="input-action-btn-wrapper">
-             {inputText.trim() ? (
-               <button type="button" className="action-circle-btn send" onClick={handleSend}><Send size={24} /></button>
-             ) : (
-               <button type="button" className="action-circle-btn mic" onClick={startRecording}><Mic size={24} /></button>
-             )}
+             {inputText.trim() ? <button type="button" className="action-circle-btn send" onClick={handleSend}><Send size={24} /></button> : <button type="button" className="action-circle-btn mic" onClick={startRecording}><Mic size={24} /></button>}
           </div>
         )}
       </div>
 
-      {/* WhatsApp-style Fullscreen Camera */}
       {isCameraOpen && (
         <div className="camera-fullscreen">
           <video ref={videoPreviewRef} autoPlay playsInline muted className="camera-preview" />
-          
-          {/* Top bar */}
           <div className="camera-top-bar">
             <button className="camera-btn" onClick={closeCamera}><X size={28} /></button>
-            {isVideoRecording && (
-              <div className="camera-rec-badge">
-                <div className="rec-pulse"></div>
-                <span>{Math.floor(videoTimer / 60).toString().padStart(2, '0')}:{(videoTimer % 60).toString().padStart(2, '0')}</span>
-              </div>
-            )}
             <button className="camera-btn" onClick={switchCamera}>🔄</button>
           </div>
-
-          {/* Bottom controls */}
           <div className="camera-bottom-bar">
-            <span className="camera-hint">{isVideoRecording ? 'Bırakarak gönder' : 'Fotoğraf çek · Basılı tut = Video'}</span>
-            <div className="camera-shutter-wrapper">
-              <button 
-                className={`camera-shutter ${isVideoRecording ? 'recording' : ''}`}
-                onClick={!isVideoRecording ? takePhoto : undefined}
-                onTouchStart={!isVideoRecording ? (e) => { e.preventDefault(); const t = setTimeout(startVideoRec, 400); e.currentTarget._holdTimer = t; } : undefined}
-                onTouchEnd={isVideoRecording ? stopVideoRec : (e) => { if (e.currentTarget._holdTimer) clearTimeout(e.currentTarget._holdTimer); }}
-                onMouseDown={!isVideoRecording ? () => { const t = setTimeout(startVideoRec, 400); document._holdTimer = t; } : undefined}
-                onMouseUp={isVideoRecording ? stopVideoRec : () => { if (document._holdTimer) clearTimeout(document._holdTimer); }}
-              >
-                {isVideoRecording ? <Square size={32} style={{color: '#fff'}} /> : <div className="shutter-inner"></div>}
-              </button>
+            <div className="camera-gallery-v2">
+              {messages.filter(m => m.isMedia && !m.deleted).slice(-10).reverse().map(m => (
+                <div key={m.id} className="gallery-item-v2" onClick={() => { setSelectedMedia(m); setMediaViewerOpen(true); closeCamera(); }}>
+                  {m.mediaType === 'image' ? <img src={getMediaUrl(m.mediaUrl)} alt="" /> : <div className="gallery-video-thumb">🎥</div>}
+                </div>
+              ))}
             </div>
+            <button className={`camera-shutter ${isVideoRecording ? 'recording' : ''}`} onClick={!isVideoRecording ? takePhoto : undefined} onTouchStart={!isVideoRecording ? (e) => { e.preventDefault(); const t = setTimeout(startVideoRec, 400); e.currentTarget._holdTimer = t; } : undefined} onTouchEnd={isVideoRecording ? stopVideoRec : (e) => { if (e.currentTarget._holdTimer) clearTimeout(e.currentTarget._holdTimer); }}>
+              {isVideoRecording ? <Square size={32} /> : <div className="shutter-inner"></div>}
+            </button>
           </div>
         </div>
       )}
 
-      {/* Avatar Lightbox */}
       {avatarPreview && (
         <div className="avatar-lightbox" onClick={() => setAvatarPreview(null)}>
-          <button className="lightbox-close" onClick={() => setAvatarPreview(null)}>
-            <X size={28} />
-          </button>
+          <button className="lightbox-close" onClick={() => setAvatarPreview(null)}><X size={28} /></button>
           <div className="lightbox-content" onClick={(e) => e.stopPropagation()}>
             <img src={avatarPreview.src} alt={avatarPreview.name} className="lightbox-image" />
             <span className="lightbox-name">{avatarPreview.name}</span>
           </div>
         </div>
       )}
+
+      {mediaViewerOpen && selectedMedia && (
+        <MediaViewer 
+          messages={messages.filter(m => m.isMedia && !m.deleted)}
+          initialMedia={selectedMedia}
+          onClose={() => setMediaViewerOpen(false)}
+          currentUser={currentUser}
+          contact={contact}
+        />
+      )}
     </div>
   );
 };
+
+const MediaViewer = ({ messages, initialMedia, onClose, currentUser, contact }) => {
+  const [currentIdx, setCurrentIdx] = useState(messages.findIndex(m => m.id === initialMedia.id));
+  const current = messages[currentIdx];
+
+  const goPrev = (e) => { e?.stopPropagation(); if (currentIdx > 0) setCurrentIdx(prev => prev - 1); };
+  const goNext = (e) => { e?.stopPropagation(); if (currentIdx < messages.length - 1) setCurrentIdx(prev => prev + 1); };
+
+  useEffect(() => {
+    const handleKey = (e) => {
+      if (e.key === 'ArrowLeft') goPrev();
+      if (e.key === 'ArrowRight') goNext();
+      if (e.key === 'Escape') onClose();
+    };
+    window.addEventListener('keydown', handleKey);
+    return () => window.removeEventListener('keydown', handleKey);
+  }, [currentIdx]);
+
+  return (
+    <div className="wa-media-viewer" onClick={onClose}>
+      <div className="wa-media-top">
+        <div className="wa-media-user">
+          <button className="wa-media-back" onClick={onClose}><ChevronLeft size={24} /></button>
+          <img src={getMediaUrl(current.senderId === currentUser.id ? currentUser.avatar : contact.avatar)} alt="" className="wa-media-avatar" />
+          <div className="wa-media-info">
+            <span className="wa-media-name">{current.senderId === currentUser.id ? 'Siz' : contact.name}</span>
+            <span className="wa-media-date">{current.timestamp}</span>
+          </div>
+        </div>
+      </div>
+
+      <div className="wa-media-content" onClick={(e) => e.stopPropagation()}>
+        {currentIdx > 0 && <button className="wa-nav-btn prev" onClick={goPrev}><ChevronLeft size={36} /></button>}
+        {current.mediaType === 'image' ? <img src={getMediaUrl(current.mediaUrl)} alt="" className="wa-main-media" /> : <video src={getMediaUrl(current.mediaUrl)} controls autoPlay className="wa-main-media" />}
+        {currentIdx < messages.length - 1 && <button className="wa-nav-btn next" onClick={goNext}><ChevronRight size={36} /></button>}
+      </div>
+
+      <div className="wa-media-bottom" onClick={(e) => e.stopPropagation()}>
+        <div className="wa-thumb-strip">
+          {messages.map((m, idx) => (
+            <div key={m.id} className={`wa-thumb-item ${idx === currentIdx ? 'active' : ''}`} onClick={() => setCurrentIdx(idx)}>
+              {m.mediaType === 'image' ? <img src={getMediaUrl(m.mediaUrl)} alt="" /> : <div className="wa-thumb-vid">🎥</div>}
+            </div>
+          ))}
+        </div>
+      </div>
+    </div>
+  );
+};
+
 export default ChatArea;
