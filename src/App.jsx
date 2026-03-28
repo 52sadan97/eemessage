@@ -149,10 +149,16 @@ function App() {
           ? msg.receiverId.toString()
           : msg.senderId.toString();
         if (!newMap[contactId]) newMap[contactId] = [];
-        if (!newMap[contactId].find(m => m.id === msg.id)) {
-          newMap[contactId] = [...newMap[contactId], msg];
+        
+        const existingIdx = newMap[contactId].findIndex(m => m.id === msg.id);
+        if (existingIdx !== -1) {
+          // Update existing message (e.g. status change)
+          const updatedMsg = { ...newMap[contactId][existingIdx], ...msg };
+          newMap[contactId] = [...newMap[contactId]];
+          newMap[contactId][existingIdx] = updatedMsg;
         } else {
-          newMap[contactId] = newMap[contactId].map(m => m.id === msg.id ? msg : m);
+          // Add new message
+          newMap[contactId] = [...newMap[contactId], msg];
         }
         return newMap;
       });
@@ -206,15 +212,18 @@ function App() {
     const handleStatusChanged = ({ messageId, status }) => {
       setMessagesMap(prev => {
         const updated = { ...prev };
+        let found = false;
         for (const key of Object.keys(updated)) {
           const idx = updated[key].findIndex(m => m.id === messageId);
           if (idx !== -1) {
-            updated[key] = [...updated[key]];
-            updated[key][idx] = { ...updated[key][idx], status };
+            const msgs = [...updated[key]];
+            msgs[idx] = { ...msgs[idx], status };
+            updated[key] = msgs;
+            found = true;
             break;
           }
         }
-        return updated;
+        return found ? updated : prev;
       });
     };
 

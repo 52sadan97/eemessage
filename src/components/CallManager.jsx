@@ -122,7 +122,8 @@ const CallManager = forwardRef(({ socket, currentUser, contacts }, ref) => {
       senderId: currentUser.id.toString(),
       receiverId: contactId.toString(),
       timestamp: new Date().toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' }),
-      isMedia: false, mediaUrl: null, mediaType: null
+      isMedia: false, mediaUrl: null, mediaType: null,
+      createdAt: Date.now()
     });
   }, [socket, currentUser]);
 
@@ -257,19 +258,32 @@ const CallManager = forwardRef(({ socket, currentUser, contacts }, ref) => {
     if (!socket) return;
 
     const handleIncomingCall = ({ signal, from, name, callType: type }) => {
-      console.log('[Call] Incoming call from', name, 'type:', type);
+      console.log('[Call] 📥 Incoming call event!', { from, name, type });
+      
       if (callStateRef.current !== 'idle') {
+        console.warn('[Call] Refusing call — busy in state:', callStateRef.current);
         socket.emit('callEnded', { to: from });
         return;
       }
+
       pendingCandidatesRef.current = [];
       hasRemoteDescRef.current = false;
-      incomingOfferRef.current = signal; // Store offer in dedicated ref
+      incomingOfferRef.current = signal;
       setCallType(type || 'video');
-      const partner = contacts.find(c => c.id.toString() === from.toString());
-      setCallPartner(partner || { id: from, name: name || 'Bilinmeyen', avatar: '' });
+
+      // Use a robust lookup and fallback
+      const contactId = from.toString();
+      const partner = contacts.find(c => c.id.toString() === contactId);
+      
+      if (partner) {
+        setCallPartner(partner);
+      } else {
+        console.warn('[Call] Caller not in contact list, using provided info');
+        setCallPartner({ id: contactId, name: name || 'Bilinmeyen', avatar: '' });
+      }
+
       setCallState('incoming');
-      playRingtone(); // 🔔 Play ringtone
+      playRingtone();
     };
 
     const handleCallAccepted = async ({ signal }) => {
@@ -458,34 +472,48 @@ const CallManager = forwardRef(({ socket, currentUser, contacts }, ref) => {
     return (
       <div className="wa-call-screen incoming">
         {audioElement}
-        <div className="wa-call-bg"></div>
+        <div className="wa-call-bg pattern-bg"></div>
         <div className="wa-call-content">
           <div className="wa-call-top">
-            <span className="wa-call-label">
-              {callType === 'video' ? '📹 Görüntülü Arama' : '📞 Sesli Arama'}
-            </span>
+            <h2 className="wa-caller-name">{callPartner.name}</h2>
+            <span className="wa-caller-number">+90 554 779 97 52</span>
           </div>
+          
           <div className="wa-call-center">
             <div className="wa-avatar-ring">
               <img src={getMediaUrl(callPartner.avatar) || 'https://via.placeholder.com/120'} alt="" className="wa-avatar" />
             </div>
-            <h2 className="wa-caller-name">{callPartner.name}</h2>
-            <p className="wa-call-status">Gelen arama...</p>
-            <span className="wa-encrypted">🔒 Uçtan uca şifrelenmiş</span>
+            <p className="wa-call-status">Gelen {callType === 'video' ? 'görüntülü' : 'sesli'} arama</p>
           </div>
-          <div className="wa-incoming-actions">
-            <div className="wa-action-item">
-              <button className="wa-call-btn reject" onClick={rejectCall}>
-                <PhoneOff size={28} />
-              </button>
-              <span>Reddet</span>
-            </div>
-            <div className="wa-action-item">
-              <button className="wa-call-btn accept" onClick={answerCall}>
-                <Phone size={28} />
-              </button>
-              <span>Kabul Et</span>
-            </div>
+
+          <div className="wa-incoming-footer">
+             <div className="wa-swipe-up-hint">
+                <div className="chevron-up"></div>
+                <span>Kabul etmek için yukarı kaydırın</span>
+             </div>
+             
+             <div className="wa-incoming-actions-v2">
+                <div className="wa-action-item">
+                  <button className="wa-call-btn reject-v2" onClick={rejectCall}>
+                    <PhoneOff size={28} />
+                  </button>
+                  <span>Reddet</span>
+                </div>
+
+                <div className="wa-action-item">
+                  <button className="wa-call-btn accept-v2" onClick={answerCall}>
+                    <Phone size={28} />
+                  </button>
+                  <span>Cevapla</span>
+                </div>
+
+                <div className="wa-action-item">
+                  <button className="wa-call-btn message-v2">
+                    <svg width="24" height="24" viewBox="0 0 24 24" fill="currentColor"><path d="M20 2H4c-1.1 0-1.99.9-1.99 2L2 22l4-4h14c1.1 0 2-.9 2-2V4c0-1.1-.9-2-2-2zm-2 12H6v-2h12v2zm0-3H6V9h12v2zm0-3H6V6h12v2z"/></svg>
+                  </button>
+                  <span>Mesaj gönder</span>
+                </div>
+             </div>
           </div>
         </div>
       </div>
@@ -496,86 +524,60 @@ const CallManager = forwardRef(({ socket, currentUser, contacts }, ref) => {
   if (callState === 'calling' || callState === 'active') {
     return (
       <div className="wa-call-screen active">
-        {/* ALWAYS render hidden audio for remote sound */}
         {audioElement}
 
-        {/* Remote video — full screen background */}
         {callType === 'video' && callState === 'active' ? (
           <video ref={remoteVideoRefCb} className="wa-remote-video" autoPlay playsInline />
         ) : (
-          <div className="wa-call-bg"></div>
+          <div className="wa-call-bg pattern-bg"></div>
         )}
 
-        {/* Top bar */}
-        <div className="wa-call-topbar">
+        <div className="wa-call-topbar-v2">
+          <button className="wa-top-btn"><ChevronDown size={24} /></button>
           <div className="wa-topbar-info">
-            <h3>{callPartner?.name || ''}</h3>
-            <span className="wa-call-timer-text">
-              {callState === 'calling' ? 'Aranıyor' : formatDuration(callDuration)}
-              {callState === 'calling' && <span className="wa-dots"><span>.</span><span>.</span><span>.</span></span>}
+            <h3 className="wa-timer-name">{callPartner?.name || ''}</h3>
+            <span className="wa-timer-val">
+              {callState === 'calling' ? 'Aranıyor...' : formatDuration(callDuration)}
             </span>
           </div>
+          <button className="wa-top-btn">👤+</button>
         </div>
 
-        {/* Avatar center (audio calls or calling state) */}
         {(callType === 'audio' || callState === 'calling') && (
           <div className="wa-call-center">
-            <div className={`wa-avatar-ring ${callState === 'calling' ? 'calling' : ''}`}>
+            <div className={`wa-avatar-large ${callState === 'calling' ? 'calling' : ''}`}>
               <img src={getMediaUrl(callPartner?.avatar) || 'https://via.placeholder.com/120'} alt="" className="wa-avatar" />
             </div>
-            <h2 className="wa-caller-name">{callPartner?.name}</h2>
-            <p className="wa-call-status">
-              {callState === 'calling' ? 'Aranıyor...' : 'Sesli Arama'}
-            </p>
-            <span className="wa-encrypted">🔒 Uçtan uca şifrelenmiş</span>
           </div>
         )}
 
-        {/* Local video PiP */}
         {callType === 'video' && (
           <div className="wa-local-pip">
             <video ref={localVideoRefCb} autoPlay playsInline muted />
           </div>
         )}
 
-        {/* Controls */}
-        <div className="wa-call-controls">
-          {callState === 'active' && callType === 'video' && (
-            <div className="wa-ctrl-item">
-              <button className={`wa-ctrl-btn ${isCamOff ? 'active' : ''}`} onClick={toggleCamera}>
-                {isCamOff ? <VideoOff size={22} /> : <Video size={22} />}
-              </button>
-              <span>Kamera</span>
-            </div>
-          )}
-          {callState === 'active' && (
-            <div className="wa-ctrl-item">
-              <button className={`wa-ctrl-btn ${isMuted ? 'active' : ''}`} onClick={toggleMute}>
-                {isMuted ? <MicOff size={22} /> : <Mic size={22} />}
-              </button>
-              <span>Mikrofon</span>
-            </div>
-          )}
-          {callState === 'active' && (
-            <div className="wa-ctrl-item">
-              <button className={`wa-ctrl-btn ${!isSpeaker ? 'active' : ''}`} onClick={toggleSpeaker}>
-                {!isSpeaker ? <VolumeX size={22} /> : <Volume2 size={22} />}
-              </button>
-              <span>{isSpeaker ? 'Hoparlör' : 'Ahize'}</span>
-            </div>
-          )}
-          <div className="wa-ctrl-item">
-            <button className="wa-ctrl-btn end" onClick={endCall}>
-              <PhoneOff size={26} />
+        <div className="wa-call-controls-v2">
+          <div className="wa-ctrl-pills">
+            <button className="wa-pill-btn"><MoreVertical size={20} /></button>
+            <button className={`wa-pill-btn ${isCamOff ? 'active' : ''}`} onClick={toggleCamera}>
+              {isCamOff ? <VideoOff size={20} /> : <Video size={20} />}
             </button>
-            <span>{callState === 'calling' ? 'İptal' : 'Bitir'}</span>
+            <button className={`wa-pill-btn ${!isSpeaker ? 'active' : ''}`} onClick={toggleSpeaker}>
+              {isSpeaker ? <Volume2 size={20} /> : <VolumeX size={20} />}
+            </button>
+            <button className={`wa-pill-btn ${isMuted ? 'active' : ''}`} onClick={toggleMute}>
+              {isMuted ? <MicOff size={20} /> : <Mic size={20} />}
+            </button>
+            <button className="wa-pill-btn end" onClick={endCall}>
+              <PhoneOff size={24} />
+            </button>
           </div>
         </div>
       </div>
     );
   }
 
-  // Even when idle, render hidden audio element so remote audio is always ready
   return audioElement;
 });
 

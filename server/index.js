@@ -430,6 +430,24 @@ io.on('connection', (socket) => {
     // Broadcast updated user list to ALL
     io.emit('users_updated', buildUsersPayload());
 
+    // NEW: Mark all "sent" messages for this user as "delivered"
+    try {
+      const undelivered = db.prepare('SELECT id, senderId FROM messages WHERE receiverId = ? AND status = ?').all(userId, 'sent');
+      if (undelivered.length > 0) {
+        const updateStmt = db.prepare('UPDATE messages SET status = ? WHERE id = ?');
+        undelivered.forEach(msg => {
+          updateStmt.run('delivered', msg.id);
+          // Notify the sender if they are online
+          const senderSocket = Array.from(activeSockets.values()).find(u => u.id.toString() === msg.senderId.toString());
+          if (senderSocket) {
+            io.to(senderSocket.socketId).emit('message_status_changed', { messageId: msg.id, status: 'delivered' });
+          }
+        });
+      }
+    } catch(err) {
+      console.error('Mark delivered on register error:', err);
+    }
+
     // Send ONLY this user's message history (privacy + performance fix)
     try {
       const historyRows = getMessagesForUser.all(userId, userId);

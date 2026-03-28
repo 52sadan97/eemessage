@@ -143,19 +143,21 @@
 }
 
 .message-bubble.sent-bubble {
-  background-color: var(--msg-sent-bg);
+  background-color: #005c4b;
+  color: #e9edef;
   border-bottom-right-radius: 4px;
-  border-top-right-radius: 18px;
+  border-top-right-radius: 12px;
 }
 
 .message-bubble.received-bubble {
-  background-color: var(--bg-panel);
+  background-color: #202c33;
+  color: #e9edef;
   border-bottom-left-radius: 4px;
-  border-top-left-radius: 18px;
+  border-top-left-radius: 12px;
 }
 
 .message-text {
-  color: var(--text-primary);
+  color: inherit;
   word-wrap: break-word;
   display: block;
   position: relative;
@@ -226,55 +228,78 @@
 }
 
 /* INPUT BAR — sticky bottom */
-.chat-input-area {
+/* NEW CHAT INPUT WRAPPER (Screenshot Style) */
+.chat-input-wrapper {
+  display: flex;
+  align-items: flex-end;
+  padding: 8px 10px;
+  gap: 8px;
+  background-color: transparent;
   position: relative;
-  min-height: 56px;
-  background-color: var(--bg-panel);
+  z-index: 50;
+}
+
+.chat-input-area-v2 {
+  flex: 1;
+  background-color: #2a3942;
+  border-radius: 24px;
   display: flex;
   align-items: center;
-  padding: 8px 12px;
-  gap: 8px;
-  border-top: 1px solid var(--border-color);
+  padding: 4px 12px;
+  min-height: 48px;
+}
+
+.chat-input-area-v2 input[type="text"] {
+  flex: 1;
+  border: none;
+  background: transparent;
+  color: #e9edef;
+  font-size: 16px;
+  padding: 8px 4px;
+  outline: none;
+}
+
+.icon-btn-v2 {
+  background: none;
+  border: none;
+  color: #8696a0;
+  cursor: pointer;
+  padding: 8px;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  border-radius: 50%;
+  transition: color 0.2s;
+}
+
+.icon-btn-v2:hover {
+  color: #e9edef;
+}
+
+.input-action-btn-wrapper {
   flex-shrink: 0;
 }
 
-@media (max-width: 480px) {
-  .chat-input-area {
-    padding: 6px 6px;
-    gap: 4px;
-    min-height: 48px;
-  }
-  .chat-input-area .icon-btn {
-    width: 32px;
-    height: 32px;
-    padding: 4px;
-  }
-  .chat-input-area .icon-btn svg {
-    width: 20px;
-    height: 20px;
-  }
-}
-
-.chat-input-area input[type="text"] {
-  flex: 1;
-  height: 40px;
-  border-radius: 20px;
+.action-circle-btn {
+  width: 48px;
+  height: 48px;
+  border-radius: 50%;
   border: none;
-  background-color: var(--input-bg);
-  padding: 0 16px;
-  font-size: 15px;
-  color: var(--text-primary);
-  outline: none;
-  transition: box-shadow 0.2s;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  cursor: pointer;
+  transition: transform 0.2s;
 }
 
-.chat-input-area input[type="text"]:focus {
-  box-shadow: 0 0 0 2px var(--primary-color);
-  background-color: var(--bg-panel);
+.action-circle-btn.mic {
+  background-color: #00a884;
+  color: #fff;
 }
 
-.send-btn {
-  color: var(--primary-color);
+.action-circle-btn.send {
+  background-color: #00a884;
+  color: #fff;
 }
 
 @keyframes fadeIn {
@@ -320,12 +345,26 @@
 
 /* Mobile optimizations */
 .mobile-only { display: none; }
+.desktop-only { display: block; }
+
 @media (max-width: 768px) {
   .mobile-only { display: flex !important; }
+  .desktop-only { display: none !important; }
 
-  .chat-area {
-    height: 100vh;
-    height: 100dvh;
+  .chat-input-area {
+    padding: 6px 4px;
+    gap: 2px;
+  }
+  
+  .chat-input-area input[type="text"] {
+    font-size: 14px;
+    padding: 8px 12px;
+    margin: 0 2px;
+  }
+
+  .chat-input-area .icon-btn {
+    width: 38px;
+    height: 38px;
   }
 
   .message-bubble {
@@ -406,6 +445,136 @@
 .call-header-btn:hover {
   background: var(--hover-bg);
   color: var(--primary-color);
+}
+
+/* Pattern Background (Screenshot style) */
+.pattern-bg {
+  background-image: url('https://user-images.githubusercontent.com/15075759/28719144-86dc0f70-73b1-11e7-911d-60d70fcded21.png');
+  background-repeat: repeat;
+  background-size: 400px;
+  background-color: #0b141a;
+  opacity: 0.2;
+}
+
+/* Incoming Call Footer (Screenshot 1/5) */
+.wa-incoming-footer {
+  width: 100%;
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  gap: 24px;
+}
+
+.wa-swipe-up-hint {
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  color: rgba(255,255,255,0.7);
+  font-size: 13px;
+  gap: 8px;
+}
+
+.wa-incoming-actions-v2 {
+  display: flex;
+  width: 100%;
+  justify-content: space-around;
+  padding: 0 20px;
+}
+
+.wa-call-btn.reject-v2 {
+  background-color: #ea0038;
+}
+
+.wa-call-btn.accept-v2 {
+  background-color: #00d46a;
+}
+
+.wa-call-btn.message-v2 {
+  background-color: #202c33;
+}
+
+/* Active Call Bar (Screenshot 2) */
+.wa-call-topbar-v2 {
+  width: 100%;
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  padding: 16px 20px;
+  z-index: 10;
+}
+
+.wa-top-btn {
+  background: none;
+  border: none;
+  color: #fff;
+  font-size: 24px;
+  cursor: pointer;
+}
+
+.wa-timer-name {
+  color: #fff;
+  font-size: 18px;
+  margin: 0;
+  text-align: center;
+}
+
+.wa-timer-val {
+  color: rgba(255,255,255,0.6);
+  font-size: 13px;
+  display: block;
+  text-align: center;
+}
+
+.wa-avatar-large {
+  width: 220px;
+  height: 220px;
+  border-radius: 50%;
+  overflow: hidden;
+  border: 4px solid #00a884;
+}
+
+.wa-call-controls-v2 {
+  width: 100%;
+  padding: 20px;
+  display: flex;
+  justify-content: center;
+}
+
+.wa-ctrl-pills {
+  background-color: #202c33;
+  border-radius: 32px;
+  display: flex;
+  padding: 8px 16px;
+  gap: 16px;
+  box-shadow: 0 4px 16px rgba(0,0,0,0.4);
+}
+
+.wa-pill-btn {
+  width: 44px;
+  height: 44px;
+  border-radius: 50%;
+  border: none;
+  background: none;
+  color: #fff;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  cursor: pointer;
+}
+
+.wa-pill-btn.active {
+  background-color: rgba(255,255,255,0.2);
+}
+
+.wa-pill-btn.end {
+  background-color: #ea0038;
+}
+
+@media (max-width: 768px) {
+  .wa-avatar-large {
+    width: 180px;
+    height: 180px;
+  }
 }
 
 /* Incoming Call Modal */
@@ -1039,4 +1208,249 @@
 @keyframes zoomIn {
   from { opacity: 0; transform: scale(0.8); }
   to { opacity: 1; transform: scale(1); }
+}
+
+/* ========================================= */
+/* UI V2 REFACTOR - PREMIUM STYLES          */
+/* ========================================= */
+
+.chat-input-wrapper {
+  display: flex !important;
+  align-items: center;
+  gap: 8px;
+  padding: 8px 12px;
+  background-color: var(--bg-panel);
+  border-top: 1px solid var(--border-light);
+}
+
+.chat-input-area-v2 {
+  flex: 1;
+  display: flex;
+  align-items: center;
+  background: var(--bg-message-own);
+  border-radius: 24px;
+  padding: 4px 8px;
+  gap: 4px;
+  box-shadow: 0 1px 3px rgba(0,0,0,0.1);
+}
+
+.chat-input-area-v2 input {
+  flex: 1;
+  border: none;
+  background: transparent;
+  padding: 8px 12px;
+  font-size: 16px;
+  color: var(--text-primary);
+  outline: none;
+}
+
+.icon-btn-v2 {
+  background: transparent;
+  border: none;
+  color: #8696a0;
+  width: 40px;
+  height: 40px;
+  border-radius: 50%;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  cursor: pointer;
+  transition: background 0.2s, color 0.2s;
+}
+
+.icon-btn-v2:hover {
+  background: rgba(0,0,0,0.05);
+  color: var(--text-primary);
+}
+
+.input-action-btn-wrapper {
+  display: flex;
+  align-items: center;
+}
+
+.action-circle-btn {
+  width: 48px;
+  height: 48px;
+  border-radius: 50%;
+  border: none;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  cursor: pointer;
+  transition: transform 0.2s, background 0.2s;
+  color: #fff;
+}
+
+.action-circle-btn.send {
+  background-color: #00a884;
+}
+
+.action-circle-btn.mic {
+  background-color: #00a884;
+}
+
+.action-circle-btn:active {
+  transform: scale(0.9);
+}
+
+/* Call UI V2 */
+.wa-call-topbar-v2 {
+  position: absolute;
+  top: 0; left: 0; right: 0;
+  background: linear-gradient(to bottom, rgba(0,0,0,0.4), transparent);
+  padding: 24px 16px;
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  z-index: 10;
+  color: #fff;
+}
+
+.wa-topbar-info {
+  text-align: center;
+}
+
+.wa-timer-name {
+  font-size: 18px;
+  margin: 0;
+  font-weight: 600;
+}
+
+.wa-timer-val {
+  font-size: 14px;
+  opacity: 0.8;
+}
+
+.wa-top-btn {
+  background: transparent;
+  border: none;
+  color: #fff;
+  cursor: pointer;
+  padding: 8px;
+}
+
+.wa-call-controls-v2 {
+  position: absolute;
+  bottom: 0; left: 0; right: 0;
+  padding: 40px 16px;
+  display: flex;
+  justify-content: center;
+  background: linear-gradient(to top, rgba(0,0,0,0.4), transparent);
+  z-index: 10;
+}
+
+.wa-ctrl-pills {
+  background: rgba(43, 43, 43, 0.95);
+  backdrop-filter: blur(10px);
+  padding: 12px 24px;
+  border-radius: 40px;
+  display: flex;
+  align-items: center;
+  gap: 24px;
+  box-shadow: 0 8px 32px rgba(0,0,0,0.3);
+}
+
+.wa-pill-btn {
+  background: transparent;
+  border: none;
+  color: #fff;
+  cursor: pointer;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  width: 44px;
+  height: 44px;
+  border-radius: 50%;
+  transition: background 0.2s;
+}
+
+.wa-pill-btn:hover {
+  background: rgba(255,255,255,0.1);
+}
+
+.wa-pill-btn.active {
+  background: #fff;
+  color: #2b2b2b;
+}
+
+.wa-pill-btn.end {
+  background: #ff3b30;
+  color: #fff;
+  width: 52px;
+  height: 52px;
+}
+
+.wa-pill-btn.end:hover {
+  background: #e0352b;
+}
+
+/* Recording V2 */
+.recording-bar-v2 {
+  flex: 1;
+  background: var(--bg-panel);
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  padding: 0 8px;
+  min-height: 48px;
+  border-radius: 24px;
+  animation: slideInUp 0.2s ease-out;
+}
+
+.rec-cancel-v2 {
+  background: transparent;
+  border: none;
+  color: #ff3b30;
+  cursor: pointer;
+  padding: 8px;
+}
+
+.rec-content-v2 {
+  display: flex;
+  align-items: center;
+  gap: 12px;
+}
+
+.rec-pulse-v2 {
+  width: 12px;
+  height: 12px;
+  background: #ff3b30;
+  border-radius: 50%;
+  animation: pulse 1s infinite;
+}
+
+.rec-timer-v2 {
+  font-weight: 500;
+  color: var(--text-primary);
+}
+
+.rec-send-v2 {
+  background: #00a884;
+  border: none;
+  color: #fff;
+  width: 40px;
+  height: 40px;
+  border-radius: 50%;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  cursor: pointer;
+}
+
+@keyframes pulse {
+  0% { transform: scale(1); opacity: 1; }
+  50% { transform: scale(1.2); opacity: 0.5; }
+  100% { transform: scale(1); opacity: 1; }
+}
+
+@keyframes slideInUp {
+  from { transform: translateY(20px); opacity: 0; }
+  to { transform: translateY(0); opacity: 1; }
+}
+
+@media screen and (max-width: 600px) {
+  .wa-ctrl-pills {
+    gap: 12px;
+    padding: 8px 16px;
+  }
 }

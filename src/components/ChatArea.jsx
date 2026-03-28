@@ -379,62 +379,73 @@ const ChatArea = ({ contact, messages, currentUser, onSendMessage, onDeleteMessa
         <div ref={endOfMessagesRef} />
       </div>
 
-      <form className="chat-input-area" onSubmit={handleSend} onClick={(e) => e.stopPropagation()}>
-
-        {/* Emoji Picker */}
-        <div style={{ position: 'relative' }} ref={emojiPickerRef}>
-          <button type="button" className="icon-btn" onClick={(e) => { e.stopPropagation(); setShowEmojiPicker(prev => !prev); }}>
-            <Smile size={24} />
-          </button>
-          {showEmojiPicker && (
-            <div className="emoji-picker-container" onClick={(e) => e.stopPropagation()}>
-              <EmojiPicker 
-                onEmojiClick={handleEmojiClick} 
-                width={320} 
-                height={400}
-                searchDisabled={false}
-                skinTonesDisabled
-                previewConfig={{ showPreview: false }}
-              />
-            </div>
-          )}
-        </div>
-
-        <input type="file" style={{display: 'none'}} ref={fileInputRef} onChange={handleFileUpload} accept="*" />
-        <button type="button" className="icon-btn" onClick={() => fileInputRef.current?.click()} title="Dosya Gönder">
-          <Paperclip size={24} />
-        </button>
-        <button type="button" className="icon-btn" onClick={openCamera} title="Kamera">
-          <Camera size={24} />
-        </button>
-        
-        {isRecording ? (
-          <div className="recording-bar">
-            <button type="button" className="rec-cancel" onClick={cancelRecording} title="İptal">
-              <X size={20} />
+      <div className="chat-input-wrapper">
+        <form className="chat-input-area-v2" onSubmit={handleSend} onClick={(e) => e.stopPropagation()}>
+          <div style={{ position: 'relative' }} ref={emojiPickerRef} className="desktop-only">
+            <button type="button" className="icon-btn-v2" onClick={(e) => { e.stopPropagation(); setShowEmojiPicker(prev => !prev); }}>
+              <Smile size={24} />
             </button>
-            <div className="rec-pulse"></div>
-            <span className="rec-timer">{Math.floor(recordingTimer / 60).toString().padStart(2, '0')}:{(recordingTimer % 60).toString().padStart(2, '0')}</span>
-            <div className="rec-wave">
-              <span></span><span></span><span></span><span></span><span></span>
+            {showEmojiPicker && (
+              <div className="emoji-picker-container" onClick={(e) => e.stopPropagation()}>
+                <EmojiPicker 
+                  onEmojiClick={handleEmojiClick} 
+                  width={320} 
+                  height={400}
+                  searchDisabled={false}
+                  skinTonesDisabled
+                  previewConfig={{ showPreview: false }}
+                />
+              </div>
+            )}
+          </div>
+
+          <input type="text" placeholder="Mesaj" value={inputText} onChange={(e) => setInputText(e.target.value)} />
+
+          <input 
+            type="file" 
+            style={{ 
+              opacity: 0, 
+              position: 'absolute', 
+              width: 0, 
+              height: 0, 
+              pointerEvents: 'none' 
+            }} 
+            ref={fileInputRef} 
+            onChange={handleFileUpload} 
+            accept="*" 
+          />
+          <button type="button" className="icon-btn-v2" onClick={() => fileInputRef.current?.click()} title="Dosya Gönder">
+            <Paperclip size={24} />
+          </button>
+          
+          <button type="button" className="icon-btn-v2" onClick={openCamera} title="Kamera">
+            <Camera size={24} />
+          </button>
+        </form>
+
+        {isRecording ? (
+          <div className="recording-bar-v2">
+            <button type="button" className="rec-cancel-v2" onClick={cancelRecording} title="İptal">
+              <X size={22} />
+            </button>
+            <div className="rec-content-v2">
+              <div className="rec-pulse-v2"></div>
+              <span className="rec-timer-v2">{Math.floor(recordingTimer / 60).toString().padStart(2, '0')}:{(recordingTimer % 60).toString().padStart(2, '0')}</span>
             </div>
-            <button type="button" className="rec-send" onClick={stopRecording} title="Gönder">
-              <Send size={20} />
+            <button type="button" className="rec-send-v2" onClick={stopRecording} title="Gönder">
+              <Send size={22} />
             </button>
           </div>
         ) : (
-          <>
-            <input type="text" placeholder="Bir mesaj yazın" value={inputText} onChange={(e) => setInputText(e.target.value)} />
-            {inputText.trim() ? (
-              <button type="submit" className="icon-btn send-btn"><Send size={24} /></button>
-            ) : (
-              <button type="button" className="icon-btn mic-btn" onClick={startRecording} title="Ses Kaydet">
-                <Mic size={24} />
-              </button>
-            )}
-          </>
+          <div className="input-action-btn-wrapper">
+             {inputText.trim() ? (
+               <button type="button" className="action-circle-btn send" onClick={handleSend}><Send size={24} /></button>
+             ) : (
+               <button type="button" className="action-circle-btn mic" onClick={startRecording}><Mic size={24} /></button>
+             )}
+          </div>
         )}
-      </form>
+      </div>
 
       {/* WhatsApp-style Fullscreen Camera */}
       {isCameraOpen && (
